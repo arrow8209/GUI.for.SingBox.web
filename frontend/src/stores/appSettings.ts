@@ -61,6 +61,7 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
     closeKernelOnExit: true,
     autoSetSystemProxy: true,
     proxyBypassList: '',
+    downloadProxy: '',
     autoStartKernel: false,
     autoRestartKernel: false,
     userAgent: '',
@@ -195,6 +196,9 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
     }
     if (!app.value.proxyBypassList) {
       app.value.proxyBypassList = await GetSystemProxyBypass()
+    }
+    if (app.value.downloadProxy === undefined) {
+      app.value.downloadProxy = ''
     }
   }
 

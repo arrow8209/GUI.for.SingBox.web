@@ -4,6 +4,7 @@ import { EventsOn, EventsOff, EventsEmit } from './events'
 import { RequestMethod } from '@/enums/app'
 import { sampleID, getUserAgent } from '@/utils'
 import { GetSystemOrKernelProxy } from '@/utils/helper'
+import { useAppSettingsStore } from '@/stores/appSettings'
 
 interface Request {
   method: RequestMethod
@@ -29,9 +30,19 @@ interface Response<T = any> {
   body: T
 }
 
+const getConfiguredProxy = () => {
+  try {
+    const store = useAppSettingsStore()
+    return (store.app.downloadProxy || '').trim()
+  } catch {
+    return ''
+  }
+}
+
 const mergeRequestOptions = async (options: Request['options']) => {
+  const configuredProxy = getConfiguredProxy()
   const mergedReqOpts: Required<Request['options']> = {
-    Proxy: await GetSystemOrKernelProxy(),
+    Proxy: configuredProxy || (await GetSystemOrKernelProxy()),
     Insecure: false,
     Redirect: true,
     Timeout: 15, // 15 seconds

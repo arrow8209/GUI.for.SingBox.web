@@ -591,6 +591,8 @@ export default {
     personalization: 'Personalization',
     behavior: 'Behavior',
     systemProxy: 'System Proxy',
+    downloadProxy: 'HTTP Proxy for downloads',
+    downloadProxyTips: 'Applied to subscriptions, rulesets, plugins and kernel resource downloads when set',
     advanced: 'Advanced',
     debug: 'Debug',
     general: 'General',

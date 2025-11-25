@@ -8,9 +8,9 @@ let reconnectTimer = 1000
 let manualClose = false
 const messageQueue: string[] = []
 
-import { apiBaseURL } from './http'
 import { useAuthStore } from '@/stores/auth'
 
+const apiBaseURL = import.meta.env.VITE_API_BASE || '/api'
 const apiUrl = new URL(apiBaseURL, window.location.origin)
 const BASE_WS_URL = `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}/ws`
 

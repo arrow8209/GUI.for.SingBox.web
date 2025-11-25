@@ -55,6 +55,7 @@ export interface AppSettings {
   closeKernelOnExit: boolean
   autoSetSystemProxy: boolean
   proxyBypassList: string
+  downloadProxy: string
   autoStartKernel: boolean
   autoRestartKernel: boolean
   userAgent: string

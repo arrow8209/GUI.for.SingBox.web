@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import { IsStartup } from '@/bridge'
 import { NavigationBar, TitleBar } from '@/components'
@@ -22,6 +22,8 @@ const appSettings = Stores.useAppSettingsStore()
 const kernelApiStore = Stores.useKernelApiStore()
 const subscribesStore = Stores.useSubscribesStore()
 const scheduledTasksStore = Stores.useScheduledTasksStore()
+const authStore = Stores.useAuthStore()
+const bootstrapped = ref(false)
 
 const handleRestartCore = async () => {
   try {
@@ -38,7 +40,11 @@ window.addEventListener('keydown', (e) => {
   }
 })
 
-envStore.setupEnv().then(async () => {
+const bootstrap = async () => {
+  if (bootstrapped.value) return
+  loading.value = true
+  hasError.value = false
+  await envStore.setupEnv()
   const showError = (err: string) => {
     hasError.value = true
     message.error(err)
@@ -69,66 +75,83 @@ envStore.setupEnv().then(async () => {
 
   loading.value = false
   kernelApiStore.initCoreState()
-})
+  bootstrapped.value = true
+}
+
+watch(
+  () => authStore.isAuthenticated,
+  (val) => {
+    if (val) {
+      bootstrap()
+    } else {
+      loading.value = false
+      bootstrapped.value = false
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <SplashView v-if="loading">
-    <Progress
-      :percent="percent"
-      :status="hasError ? 'danger' : 'primary'"
-      :radius="10"
-      type="circle"
-    />
-  </SplashView>
+  <RouterView v-if="!authStore.isAuthenticated" />
   <template v-else>
-    <TitleBar />
-    <div class="flex-1 overflow-y-auto flex flex-col p-8">
-      <NavigationBar />
-      <div class="flex flex-col overflow-y-auto mt-8 px-8 h-full">
-        <RouterView #="{ Component }">
-          <KeepAlive>
-            <component :is="Component" />
-          </KeepAlive>
-        </RouterView>
+    <SplashView v-if="loading">
+      <Progress
+        :percent="percent"
+        :status="hasError ? 'danger' : 'primary'"
+        :radius="10"
+        type="circle"
+      />
+    </SplashView>
+    <template v-else>
+      <TitleBar />
+      <div class="flex-1 overflow-y-auto flex flex-col p-8">
+        <NavigationBar />
+        <div class="flex flex-col overflow-y-auto mt-8 px-8 h-full">
+          <RouterView #="{ Component }">
+            <KeepAlive>
+              <component :is="Component" />
+            </KeepAlive>
+          </RouterView>
+        </div>
       </div>
+    </template>
+
+    <Modal
+      v-model:open="appStore.showAbout"
+      :cancel="false"
+      :submit="false"
+      mask-closable
+      min-width="50"
+    >
+      <AboutView />
+    </Modal>
+
+    <Menu
+      v-model="appStore.menuShow"
+      :position="appStore.menuPosition"
+      :menu-list="appStore.menuList"
+    />
+
+    <Tips
+      v-model="appStore.tipsShow"
+      :position="appStore.tipsPosition"
+      :message="appStore.tipsMessage"
+    />
+
+    <CommandView v-if="!loading" />
+
+    <div
+      v-if="kernelApiStore.needRestart || kernelApiStore.restarting"
+      class="fixed right-32 bottom-32"
+    >
+      <Button
+        @click="handleRestartCore"
+        v-tips="'home.overview.restart'"
+        :loading="kernelApiStore.restarting"
+        icon="restart"
+        class="rounded-full w-42 h-42 shadow"
+      />
     </div>
   </template>
-
-  <Modal
-    v-model:open="appStore.showAbout"
-    :cancel="false"
-    :submit="false"
-    mask-closable
-    min-width="50"
-  >
-    <AboutView />
-  </Modal>
-
-  <Menu
-    v-model="appStore.menuShow"
-    :position="appStore.menuPosition"
-    :menu-list="appStore.menuList"
-  />
-
-  <Tips
-    v-model="appStore.tipsShow"
-    :position="appStore.tipsPosition"
-    :message="appStore.tipsMessage"
-  />
-
-  <CommandView v-if="!loading" />
-
-  <div
-    v-if="kernelApiStore.needRestart || kernelApiStore.restarting"
-    class="fixed right-32 bottom-32"
-  >
-    <Button
-      @click="handleRestartCore"
-      v-tips="'home.overview.restart'"
-      :loading="kernelApiStore.restarting"
-      icon="restart"
-      class="rounded-full w-42 h-42 shadow"
-    />
-  </div>
 </template>

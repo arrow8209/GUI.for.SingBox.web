@@ -352,6 +352,19 @@ if (envStore.env.os === 'windows') {
           </template>
         </Input>
       </div>
+      <div class="px-8 py-12 flex items-center justify-between">
+        <div class="text-16 font-bold">
+          {{ t('settings.downloadProxy') }}
+          <span class="font-normal text-12">({{ t('settings.downloadProxyTips') }})</span>
+        </div>
+        <Input
+          v-model.lazy="appSettings.app.downloadProxy"
+          placeholder="http://127.0.0.1:7890"
+          editable
+          clearable
+          class="text-14"
+        />
+      </div>
     </Card>
 
     <div class="px-8 py-12 text-18 font-bold">{{ t('settings.advanced') }}</div>

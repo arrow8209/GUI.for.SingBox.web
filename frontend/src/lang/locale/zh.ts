@@ -590,6 +590,8 @@ export default {
     personalization: '个性化',
     behavior: '行为',
     systemProxy: '系统代理',
+    downloadProxy: '下载使用的 HTTP 代理',
+    downloadProxyTips: '填写后订阅、规则集、插件及内核页面相关下载都会走该代理',
     advanced: '高级',
     debug: '调试',
     general: '通用',

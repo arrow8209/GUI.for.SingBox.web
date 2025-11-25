@@ -1,16 +1,15 @@
 package bridge
 
 import (
-	"context"
 	"net/http"
 
-	"github.com/wailsapp/wails/v2/pkg/menu"
+	"guiforcores/pkg/eventbus"
 )
 
 // App struct
 type App struct {
-	Ctx     context.Context
-	AppMenu *menu.Menu
+	Bus  *eventbus.Bus
+	Exit func()
 }
 
 type EnvResult struct {

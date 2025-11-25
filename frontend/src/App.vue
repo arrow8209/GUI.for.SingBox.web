@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import { EventsOn, WindowHide, IsStartup } from '@/bridge'
+import { IsStartup } from '@/bridge'
 import { NavigationBar, TitleBar } from '@/components'
 import * as Stores from '@/stores'
 import { exitApp, sampleID, sleep, message } from '@/utils'
@@ -30,38 +30,6 @@ const handleRestartCore = async () => {
     message.error(e.message || e)
   }
 }
-
-EventsOn('onLaunchApp', async ([arg]: string[]) => {
-  if (!arg) return
-
-  const url = new URL(arg)
-  if (url.pathname.startsWith('//import-remote-profile')) {
-    const _url = url.searchParams.get('url')
-    const _name = decodeURIComponent(url.hash).slice(1) || sampleID()
-
-    if (!_url) {
-      message.error('URL missing')
-      return
-    }
-
-    try {
-      await subscribesStore.importSubscribe(_name, _url)
-      message.success('common.success')
-    } catch (e: any) {
-      message.error(e.message || e)
-    }
-  }
-})
-
-EventsOn('onBeforeExitApp', async () => {
-  if (appSettings.app.exitOnClose) {
-    exitApp()
-  } else {
-    WindowHide()
-  }
-})
-
-EventsOn('onExitApp', () => exitApp())
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {

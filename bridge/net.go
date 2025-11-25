@@ -11,8 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func (a *App) Requests(method string, url string, headers map[string]string, body string, options RequestOptions) HTTPResult {
@@ -27,12 +25,15 @@ func (a *App) Requests(method string, url string, headers map[string]string, bod
 
 	req.Header = GetHeader(headers)
 
-	if options.CancelId != "" {
-		runtime.EventsOn(a.Ctx, options.CancelId, func(data ...any) {
-			log.Printf("Requests Canceled: %v %v", method, url)
+	var unsubscribe func()
+	if options.CancelId != "" && a.Bus != nil {
+		unsubscribe = a.Bus.On(options.CancelId, func(_ []any) {
+			log.Printf("Requests canceled: %v %v", method, url)
 			cancel()
 		})
-		defer runtime.EventsOff(a.Ctx, options.CancelId)
+	}
+	if unsubscribe != nil {
+		defer unsubscribe()
 	}
 
 	resp, err := client.Do(req)
@@ -61,12 +62,15 @@ func (a *App) Download(method string, url string, path string, headers map[strin
 
 	req.Header = GetHeader(headers)
 
-	if options.CancelId != "" {
-		runtime.EventsOn(a.Ctx, options.CancelId, func(data ...any) {
-			log.Printf("Download Canceled: %v %v", url, path)
+	var unsubscribe func()
+	if options.CancelId != "" && a.Bus != nil {
+		unsubscribe = a.Bus.On(options.CancelId, func(_ []any) {
+			log.Printf("Download canceled: %v %v", url, path)
 			cancel()
 		})
-		defer runtime.EventsOff(a.Ctx, options.CancelId)
+	}
+	if unsubscribe != nil {
+		defer unsubscribe()
 	}
 
 	resp, err := client.Do(req)
@@ -136,12 +140,15 @@ func (a *App) Upload(method string, url string, path string, headers map[string]
 
 	client, ctx, cancel := withRequestOptionsClient(options)
 
-	if options.CancelId != "" {
-		runtime.EventsOn(a.Ctx, options.CancelId, func(data ...any) {
-			log.Printf("Upload Canceled: %v %v", url, path)
+	var unsubscribe func()
+	if options.CancelId != "" && a.Bus != nil {
+		unsubscribe = a.Bus.On(options.CancelId, func(_ []any) {
+			log.Printf("Upload canceled: %v %v", url, path)
 			cancel()
 		})
-		defer runtime.EventsOff(a.Ctx, options.CancelId)
+	}
+	if unsubscribe != nil {
+		defer unsubscribe()
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
@@ -171,8 +178,8 @@ func (wt *WriteTracker) Write(p []byte) (n int, err error) {
 	wt.Progress += int64(n)
 
 	shouldEmit := wt.Total <= 0 || wt.Progress-wt.LastEmitted >= wt.EmitThreshold || wt.Progress == wt.Total
-	if shouldEmit {
-		runtime.EventsEmit(wt.App.Ctx, wt.ProgressChange, wt.Progress, wt.Total)
+	if shouldEmit && wt.App != nil && wt.App.Bus != nil {
+		wt.App.Bus.Emit(wt.ProgressChange, wt.Progress, wt.Total)
 		wt.LastEmitted = wt.Progress
 	}
 

@@ -1,4 +1,4 @@
-import * as App from '@wails/go/bridge/App'
+import { httpClient } from './http'
 
 type QueryType =
   | 'ASN'
@@ -10,10 +10,8 @@ type QueryType =
   | 'Enterprise'
 
 export const OpenMMDB = async (path: string, id: string) => {
-  const { flag, data } = await App.OpenMMDB(path, id)
-  if (!flag) {
-    throw data
-  }
+  const { flag, data } = await httpClient.post<{ flag: boolean; data: string }>('/mmdb/open', { path, id })
+  if (!flag) throw data
   return {
     close: () => CloseMMDB(path, id),
     query: (ip: string, type: QueryType) => QueryMMDB(path, ip, type),
@@ -21,17 +19,17 @@ export const OpenMMDB = async (path: string, id: string) => {
 }
 
 export const CloseMMDB = async (path: string, id: string) => {
-  const { flag, data } = await App.CloseMMDB(path, id)
-  if (!flag) {
-    throw data
-  }
+  const { flag, data } = await httpClient.post<{ flag: boolean; data: string }>('/mmdb/close', { path, id })
+  if (!flag) throw data
   return data
 }
 
 export const QueryMMDB = async (path: string, ip: string, type: QueryType = 'Country') => {
-  const { flag, data } = await App.QueryMMDB(path, ip, type)
-  if (!flag) {
-    throw data
-  }
+  const { flag, data } = await httpClient.post<{ flag: boolean; data: string }>('/mmdb/query', {
+    path,
+    ip,
+    type,
+  })
+  if (!flag) throw data
   return JSON.parse(data)
 }

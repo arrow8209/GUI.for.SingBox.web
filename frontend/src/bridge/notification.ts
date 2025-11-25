@@ -1,31 +1,44 @@
-import * as App from '@wails/go/bridge/App'
-
-import { APP_TITLE } from '@/utils'
+import { message } from '@/utils'
 
 interface NotifyOptions {
-  AppName?: string
-  Beep?: boolean
+  silent?: boolean
 }
 
 export const Notify = async (
   title: string,
-  message: string,
+  body: string,
   icon = '',
   options: NotifyOptions = {},
 ) => {
-  const _options: Required<NotifyOptions> = { AppName: APP_TITLE, Beep: true, ...options }
-  const icons: Record<string, string> = {
-    success: 'data/.cache/imgs/notify_success.png',
-    error: 'data/.cache/imgs/notify_error.png',
+  if (!('Notification' in window)) {
+    message.info(`${title}: ${body}`)
+    return
   }
-  const { flag, data } = await App.Notify(
-    title,
-    message,
-    icons[icon] || 'data/.cache/imgs/tray_normal_dark.png',
-    _options,
-  )
-  if (!flag) {
-    throw data
+
+  let permission = Notification.permission
+  if (permission === 'default') {
+    permission = await Notification.requestPermission()
   }
-  return data
+
+  if (permission !== 'granted') {
+    message.info(`${title}: ${body}`)
+    return
+  }
+
+  try {
+    new Notification(title, {
+      body,
+      icon: formatIcon(icon),
+      silent: options.silent,
+    })
+  } catch (err) {
+    console.warn('Notification error', err)
+    message.info(`${title}: ${body}`)
+  }
+}
+
+const formatIcon = (icon: string) => {
+  if (!icon) return undefined
+  if (/^https?:\/\//i.test(icon)) return icon
+  return `${window.location.origin}/${icon.replace(/^\//, '')}`
 }

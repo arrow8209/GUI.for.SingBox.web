@@ -170,7 +170,10 @@ export const createAsyncPool = <T>(poolLimit: number, array: T[], iteratorFn: It
 
 export const getUserAgent = () => {
   const appSettings = useAppSettingsStore()
-  return appSettings.app.userAgent || APP_TITLE + '/' + APP_VERSION
+  return (
+    appSettings.app.userAgent ||
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+  )
 }
 
 export const getGitHubApiAuthorization = () => {

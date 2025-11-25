@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v3/process"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func (a *App) Exec(path string, args []string, options ExecOptions) FlagResult {
@@ -53,6 +52,7 @@ func (a *App) ExecBackground(path string, args []string, outEvent string, endEve
 	log.Printf("ExecBackground: %s %s %s %s %v", path, args, outEvent, endEvent, options)
 
 	exePath := GetPath(path)
+	absPath := exePath
 
 	if _, err := os.Stat(exePath); os.IsNotExist(err) {
 		exePath = path
@@ -78,7 +78,7 @@ func (a *App) ExecBackground(path string, args []string, outEvent string, endEve
 		return FlagResult{false, err.Error()}
 	}
 
-	if outEvent != "" {
+	if outEvent != "" && a.Bus != nil {
 		scanAndEmit := func(reader io.Reader) {
 			scanner := bufio.NewScanner(reader)
 			stopOutput := false
@@ -91,7 +91,7 @@ func (a *App) ExecBackground(path string, args []string, outEvent string, endEve
 				}
 
 				if !stopOutput {
-					runtime.EventsEmit(a.Ctx, outEvent, text)
+					a.Bus.Emit(outEvent, text)
 
 					if options.StopOutputKeyword != "" && strings.Contains(text, options.StopOutputKeyword) {
 						stopOutput = true
@@ -103,14 +103,16 @@ func (a *App) ExecBackground(path string, args []string, outEvent string, endEve
 		go scanAndEmit(stdout)
 	}
 
-	if endEvent != "" {
+	if endEvent != "" && a.Bus != nil {
 		go func() {
 			cmd.Wait()
-			runtime.EventsEmit(a.Ctx, endEvent)
+			a.Bus.Emit(endEvent)
 		}()
 	}
 
 	pid := cmd.Process.Pid
+	// persist pid info so frontend can locate the binary
+	_ = os.WriteFile(GetPath("data/.cache/core-process"), []byte(strconv.Itoa(pid)+","+absPath), 0644)
 
 	return FlagResult{true, strconv.Itoa(pid)}
 }

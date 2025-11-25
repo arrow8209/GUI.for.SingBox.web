@@ -1,6 +1,5 @@
-import * as App from '@wails/go/bridge/App'
-import { EventsOn, EventsOff } from '@wails/runtime/runtime'
-
+import { httpClient } from './http'
+import { EventsOn, EventsOff } from './events'
 import { sampleID } from '@/utils'
 
 interface ExecOptions {
@@ -12,21 +11,24 @@ interface ExecOptions {
   stopOutputKeyword?: string
 }
 
-const mergeExecOptions = (options: ExecOptions) => {
-  const mergedExecOpts = {
-    Convert: options.Convert ?? options.convert ?? false,
-    Env: options.Env ?? options.env ?? {},
-    StopOutputKeyword: options.StopOutputKeyword ?? options.stopOutputKeyword ?? '',
-  }
-  return mergedExecOpts
+const mergeExecOptions = (options: ExecOptions = {}) => ({
+  Convert: options.Convert ?? options.convert ?? false,
+  Env: options.Env ?? options.env ?? {},
+  StopOutputKeyword: options.StopOutputKeyword ?? options.stopOutputKeyword ?? '',
+})
+
+const assertFlag = (res: { flag: boolean; data: string }) => {
+  if (!res.flag) throw res.data
+  return res.data
 }
 
 export const Exec = async (path: string, args: string[], options: ExecOptions = {}) => {
-  const { flag, data } = await App.Exec(path, args, mergeExecOptions(options))
-  if (!flag) {
-    throw data
-  }
-  return data
+  const res = await httpClient.post<{ flag: boolean; data: string }>('/exec/run', {
+    path,
+    args,
+    options: mergeExecOptions(options),
+  })
+  return assertFlag(res)
 }
 
 export const ExecBackground = async (
@@ -36,19 +38,9 @@ export const ExecBackground = async (
   onEnd?: () => void,
   options: ExecOptions = {},
 ) => {
-  const outEvent = (onOut && sampleID()) || ''
-  const endEvent = (onEnd && sampleID()) || (outEvent && sampleID()) || ''
-
-  const { flag, data } = await App.ExecBackground(
-    path,
-    args,
-    outEvent,
-    endEvent,
-    mergeExecOptions(options),
-  )
-  if (!flag) {
-    throw data
-  }
+  const mergedOptions = mergeExecOptions(options)
+  const outEvent = onOut ? sampleID() : ''
+  const endEvent = onEnd ? sampleID() : outEvent ? sampleID() : ''
 
   if (outEvent) {
     EventsOn(outEvent, onOut!)
@@ -62,29 +54,36 @@ export const ExecBackground = async (
     })
   }
 
-  return Number(data)
+  try {
+    const res = await httpClient.post<{ flag: boolean; data: string }>('/exec/background', {
+      path,
+      args,
+      outEvent,
+      endEvent,
+      options: mergedOptions,
+    })
+
+    assertFlag(res)
+
+    return Number(res.data)
+  } catch (err) {
+    outEvent && EventsOff(outEvent)
+    endEvent && EventsOff(endEvent)
+    throw err
+  }
 }
 
 export const ProcessInfo = async (pid: number) => {
-  const { flag, data } = await App.ProcessInfo(pid)
-  if (!flag) {
-    throw data
-  }
-  return data
+  const res = await httpClient.post<{ flag: boolean; data: string }>('/exec/process-info', { pid })
+  return assertFlag(res)
 }
 
 export const ProcessMemory = async (pid: number) => {
-  const { flag, data } = await App.ProcessMemory(pid)
-  if (!flag) {
-    throw data
-  }
-  return Number(data)
+  const res = await httpClient.post<{ flag: boolean; data: string }>('/exec/process-memory', { pid })
+  return Number(assertFlag(res))
 }
 
 export const KillProcess = async (pid: number, timeout = 10) => {
-  const { flag, data } = await App.KillProcess(pid, timeout)
-  if (!flag) {
-    throw data
-  }
-  return data
+  const res = await httpClient.post<{ flag: boolean; data: string }>('/exec/kill', { pid, timeout })
+  return assertFlag(res)
 }

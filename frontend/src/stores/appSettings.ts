@@ -116,7 +116,8 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
     if (dirs) {
       const files = dirs.flatMap((file) => {
         if (file.isDir) return []
-        const [name, ext] = file.name.split('.')
+        const fileName = file.name || ''
+        const [name, ext] = fileName.split('.')
         return name && ext === 'json' ? { label: name, value: name } : []
       })
       locales.value.push(...files)

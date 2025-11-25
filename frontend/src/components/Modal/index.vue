@@ -160,19 +160,16 @@ provide(IS_IN_MODAL, true)
         @click.self="onMaskClick"
         :style="{ zIndex: modalZindex }"
         class="gui-modal-mask fixed inset-0 flex items-center justify-center backdrop-blur-sm"
-        style="--wails-draggable: drag"
       >
         <div
           :style="contentStyle"
           :class="props.class"
           class="gui-modal-modal transition duration-200 flex flex-col rounded-8 shadow"
-          style="--wails-draggable: false"
         >
           <div
             v-if="title || slots.title || slots.toolbar"
             @dblclick="toggleMaximize"
             class="flex items-center p-16"
-            style="--wails-draggable: drag"
           >
             <slot name="title">
               <div v-if="title" class="font-bold">{{ t(title) }}</div>

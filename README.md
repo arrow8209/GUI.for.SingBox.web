@@ -1,7 +1,7 @@
 <div align="center">
   <img src="build/appicon.png" alt="GUI.for.SingBox" width="200">
   <h1>GUI.for.SingBox</h1>
-  <p>A GUI program developed by vue3 + wails.</p>
+  <p>A Web UI for sing-box built with Vue 3 + Go HTTP server.</p>
 </div>
 
 ## Preview
@@ -21,12 +21,8 @@ Take a look at the live version here: 👉 <a href="https://gui-for-cores.github
 1、Build Environment
 
 - Node.js [link](https://nodejs.org/en)
-
 - pnpm ：`npm i -g pnpm`
-
 - Go [link](https://go.dev/)
-
-- Wails [link](https://wails.io/) ：`go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 
 2、Pull and Build
 
@@ -34,13 +30,15 @@ Take a look at the live version here: 👉 <a href="https://gui-for-cores.github
 git clone https://github.com/GUI-for-Cores/GUI.for.SingBox.git
 
 cd GUI.for.SingBox/frontend
-
-pnpm install --frozen-lockfile && pnpm build
+pnpm install
+pnpm build
 
 cd ..
-
-wails build
+go build -o gui-singbox
+./gui-singbox
 ```
+
+By default the server listens on `:22345`. Set `PORT=8080` or `SERVER_ADDR=127.0.0.1:8080` before running to customize.
 
 ## Stargazers over time
 

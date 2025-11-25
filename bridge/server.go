@@ -16,8 +16,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var requestCounter uint64
@@ -145,16 +143,28 @@ func handleHttpRequest(a *App, serverID string) http.HandlerFunc {
 		requestID := serverID + strconv.FormatUint(count, 10)
 		respChan := make(chan ResponseData, 1)
 
-		ctx, cancel := context.WithTimeout(a.Ctx, 60*time.Second) // 60s
+		if a.Bus == nil {
+			http.Error(w, "event bus unavailable", http.StatusInternalServerError)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		runtime.EventsOn(ctx, requestID, func(data ...any) {
-			defer runtime.EventsOff(ctx, requestID)
-			resp := buildResponse(data)
-			respChan <- resp
+		unsubscribe := a.Bus.On(requestID, func(data []any) {
+			select {
+			case respChan <- buildResponse(data):
+			default:
+			}
 		})
+		defer unsubscribe()
 
-		runtime.EventsEmit(a.Ctx, serverID, requestID, r.Method, r.URL.RequestURI(), r.Header, body)
+		headerCopy := make(map[string][]string, len(r.Header))
+		for key, value := range r.Header {
+			headerCopy[key] = value
+		}
+
+		a.Bus.Emit(serverID, requestID, r.Method, r.URL.RequestURI(), headerCopy, string(body))
 
 		select {
 		case res := <-respChan:

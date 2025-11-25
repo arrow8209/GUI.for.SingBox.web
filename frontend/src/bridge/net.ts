@@ -1,5 +1,5 @@
-import * as App from '@wails/go/bridge/App'
-import { EventsOn, EventsOff, EventsEmit } from '@wails/runtime/runtime'
+import { httpClient } from './http'
+import { EventsOn, EventsOff, EventsEmit } from './events'
 
 import { RequestMethod } from '@/enums/app'
 import { sampleID, getUserAgent } from '@/utils'
@@ -23,6 +23,7 @@ interface Request {
 }
 
 interface Response<T = any> {
+  flag: boolean
   status: number
   headers: Record<string, string | string[]>
   body: T
@@ -41,9 +42,14 @@ const mergeRequestOptions = async (options: Request['options']) => {
   return mergedReqOpts
 }
 
-const transformResponseHeaders = (headers: Record<string, string[]>): Response['headers'] => {
+const transformResponseHeaders = (headers: Record<string, string | string[]>): Response['headers'] => {
   return Object.fromEntries(
-    Object.entries(headers).map(([key, value]) => [key, value.length > 1 ? value : value[0]!]),
+    Object.entries(headers).map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return [key, value.length > 1 ? value : value[0]!]
+      }
+      return [key, value]
+    }),
   )
 }
 
@@ -77,7 +83,7 @@ const transformRequest = async (
 
 const transformResponse = <T = any>(
   status: Response['status'],
-  headers: Record<string, string[]>,
+  headers: Record<string, string | string[]>,
   body: Response['body'],
 ) => {
   const transformedHeaders = transformResponseHeaders(headers)
@@ -112,12 +118,16 @@ const requestWithProgress = (fnName: 'Download' | 'Upload') => {
       EventsOn(progressEvent, progress!)
     }
 
-    const {
-      flag,
-      status,
-      headers: respHeaders,
-      body: respBody,
-    } = await App[fnName](method, url, path, _headers, progressEvent, _options)
+    const { flag, status, headers: respHeaders, body: respBody } = await httpClient.post<
+      Response
+    >(`/http/${fnName.toLowerCase()}`, {
+      method,
+      url,
+      path,
+      headers: _headers,
+      event: progressEvent,
+      options: _options,
+    })
 
     if (progressEvent) {
       EventsOff(progressEvent)
@@ -138,12 +148,16 @@ const requestWithBody = (method: RequestMethod.Put | RequestMethod.Post | Reques
   ) => {
     const [_headers, _body, _options] = await transformRequest(headers, body, options)
 
-    const {
-      flag,
-      status,
-      headers: respHeaders,
-      body: respBody,
-    } = await App.Requests(method, url, _headers, _body, _options)
+    const { flag, status, headers: respHeaders, body: respBody } = await httpClient.post<Response>(
+      '/http/request',
+      {
+        method,
+        url,
+        headers: _headers,
+        body: _body,
+        options: _options,
+      },
+    )
 
     if (!flag) throw respBody
 
@@ -161,12 +175,16 @@ const requestWithoutBody = (
   ) => {
     const [_headers, , _options] = await transformRequest(headers, null, options)
 
-    const {
-      flag,
-      status,
-      headers: respHeaders,
-      body,
-    } = await App.Requests(methd, url, _headers, '', _options)
+    const { flag, status, headers: respHeaders, body } = await httpClient.post<Response>(
+      '/http/request',
+      {
+        method: methd,
+        url,
+        headers: _headers,
+        body: '',
+        options: _options,
+      },
+    )
 
     if (!flag) throw body
 
@@ -183,12 +201,16 @@ export const Requests = async <T = any>(options: RequestWithAutoTransform) => {
 
   const [reqHeaders, reqBody, finalReqOpts] = await transformRequest(headers, body, reqOpts)
 
-  const {
-    flag,
-    status,
-    headers: respHeaders,
-    body: respBody,
-  } = await App.Requests(method.toUpperCase(), url, reqHeaders, reqBody, finalReqOpts)
+  const { flag, status, headers: respHeaders, body: respBody } = await httpClient.post<Response>(
+    '/http/request',
+    {
+      method: method.toUpperCase(),
+      url,
+      headers: reqHeaders,
+      body: reqBody,
+      options: finalReqOpts,
+    },
+  )
 
   if (!flag) throw respBody
 

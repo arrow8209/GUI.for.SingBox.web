@@ -1,23 +1,8 @@
 package bridge
 
-import (
-	"github.com/gen2brain/beeep"
-)
+import "log"
 
-func (a *App) Notify(title string, message string, icon string, options NotifyOptions) FlagResult {
-	fullPath := GetPath(icon)
-
-	beeep.AppName = options.AppName
-
-	var err error
-	if options.Beep {
-		err = beeep.Alert(title, message, fullPath)
-	} else {
-		err = beeep.Notify(title, message, fullPath)
-	}
-	if err != nil {
-		return FlagResult{false, err.Error()}
-	}
-
+func (a *App) Notify(title string, message string, _ string, _ NotifyOptions) FlagResult {
+	log.Printf("Notify: %s - %s", title, message)
 	return FlagResult{true, "Success"}
 }

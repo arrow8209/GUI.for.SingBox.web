@@ -19,6 +19,7 @@ export const CoreWorkingDirectory = 'data/sing-box'
 export const CorePidFilePath = CoreWorkingDirectory + '/pid.txt'
 export const CoreConfigFilePath = CoreWorkingDirectory + '/config.json'
 export const CoreCacheFilePath = CoreWorkingDirectory + '/cache.db'
+export const CoreProcessCacheFilePath = 'data/.cache/core-process'
 
 export const ModeOptions = [
   {

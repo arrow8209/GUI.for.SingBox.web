@@ -6,6 +6,7 @@ import { ProcessInfo, KillProcess, ExecBackground, ReadFile, WriteFile, RemoveFi
 import {
   CoreConfigFilePath,
   CorePidFilePath,
+  CoreProcessCacheFilePath,
   CoreStopOutputKeyword,
   CoreWorkingDirectory,
 } from '@/constant/kernel'
@@ -337,8 +338,34 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
   let { promise: coreStoppedPromise, resolve: coreStoppedResolver } = Promise.withResolvers()
 
   const initCoreState = async () => {
-    corePid.value = Number(await ReadFile(CorePidFilePath).catch(() => -1))
-    const processName = corePid.value === -1 ? '' : await ProcessInfo(corePid.value).catch(() => '')
+    const parsePid = (value: string) => {
+      const pid = Number(value.trim())
+      return Number.isFinite(pid) && pid > 0 ? pid : -1
+    }
+    const describeProcess = async (pid: number) => {
+      if (pid <= 0) return ''
+      return ProcessInfo(pid).catch(() => '')
+    }
+
+    let pidTxt = await ReadFile(CorePidFilePath).catch(() => '')
+    let pid = pidTxt ? parsePid(pidTxt) : -1
+    let processName = await describeProcess(pid)
+
+    if (!processName.startsWith('sing-box')) {
+      const cache = await ReadFile(CoreProcessCacheFilePath).catch(() => '')
+      if (cache) {
+        const [cachedPidTxt = ''] = cache.split(',')
+        const cachedPid = parsePid(cachedPidTxt)
+        const cachedProcessName = await describeProcess(cachedPid)
+        if (cachedProcessName.startsWith('sing-box')) {
+          pid = cachedPid
+          processName = cachedProcessName
+          await WriteFile(CorePidFilePath, String(pid)).catch(() => undefined)
+        }
+      }
+    }
+
+    corePid.value = pid
     running.value = processName.startsWith('sing-box')
 
     coreStateLoading.value = false

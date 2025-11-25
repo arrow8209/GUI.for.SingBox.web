@@ -51,7 +51,7 @@ interface IRuleSet {
   format: RuleSetFormat
 }
 
-type InboundType = 'mixed' | 'socks' | 'http' | 'tun'
+type InboundType = 'mixed' | 'socks' | 'http' | 'tun' | 'vless' | 'trojan'
 type InboundListen = {
   listen: string
   listen_port: number
@@ -87,6 +87,34 @@ interface IInbound {
     route_exclude_address: string[]
     endpoint_independent_nat: boolean
     stack: TunStackEnum
+  }
+  vless?: {
+    listen: InboundListen
+    users: string[]
+    tls: {
+      enabled: boolean
+      server_name: string
+      reality: {
+        enabled: boolean
+        handshake: {
+          server: string
+          server_port: number
+        }
+        private_key: string
+        short_id: string[]
+      }
+    }
+  }
+  trojan?: {
+    listen: InboundListen
+    users: string[]
+    tls: {
+      enabled: boolean
+      server_name: string
+      alpn: string[]
+      min_version: string
+      max_version: string
+    }
   }
 }
 

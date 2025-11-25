@@ -110,6 +110,48 @@ export const DefaultInboundMixed = (): IInbound['mixed'] => ({
   users: [],
 })
 
+export const DefaultInboundVless = (): IInbound['vless'] => ({
+  listen: {
+    listen: '127.0.0.1',
+    listen_port: 443,
+    tcp_fast_open: false,
+    tcp_multi_path: false,
+    udp_fragment: false,
+  },
+  users: [],
+  tls: {
+    enabled: true,
+    server_name: '',
+    reality: {
+      enabled: true,
+      handshake: {
+        server: '',
+        server_port: 443,
+      },
+      private_key: '',
+      short_id: [],
+    },
+  },
+})
+
+export const DefaultInboundTrojan = (): IInbound['trojan'] => ({
+  listen: {
+    listen: '127.0.0.1',
+    listen_port: 443,
+    tcp_fast_open: false,
+    tcp_multi_path: false,
+    udp_fragment: false,
+  },
+  users: [],
+  tls: {
+    enabled: true,
+    server_name: '',
+    alpn: ['h2', 'http/1.1'],
+    min_version: '1.3',
+    max_version: '1.3',
+  },
+})
+
 export const DefaultInboundTun = (): IInbound['tun'] => ({
   interface_name: '',
   address: ['172.18.0.1/30', 'fdfe:dcba:9876::1/126'],

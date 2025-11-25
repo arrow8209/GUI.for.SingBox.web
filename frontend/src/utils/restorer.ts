@@ -54,6 +54,14 @@ export const restoreProfile = (config: Recordable) => {
     {},
   )
 
+  const restoreListen = (node: any): InboundListen => ({
+    listen: node.listen || '0.0.0.0',
+    listen_port: node.listen_port || 0,
+    tcp_fast_open: !!node.tcp_fast_open,
+    tcp_multi_path: !!node.tcp_multi_path,
+    udp_fragment: !!node.udp_fragment,
+  })
+
   Object.entries(config).forEach(([field, value]) => {
     if (field === 'log') {
       deepAssign(profile[field], value)
@@ -61,7 +69,16 @@ export const restoreProfile = (config: Recordable) => {
       deepAssign(profile[field], value)
     } else if (field === 'inbounds') {
       profile.inbounds = value.flatMap((inbound: any) => {
-        if (![Inbound.Http, Inbound.Mixed, Inbound.Socks, Inbound.Tun].includes(inbound.type)) {
+        if (
+          ![
+            Inbound.Http,
+            Inbound.Mixed,
+            Inbound.Socks,
+            Inbound.Tun,
+            Inbound.VLESS,
+            Inbound.Trojan,
+          ].includes(inbound.type)
+        ) {
           return []
         }
         const extra = {
@@ -98,6 +115,44 @@ export const restoreProfile = (config: Recordable) => {
                 udp_fragment: !!inbound.udp_fragment,
               },
               users: (inbound.users || []).map((user: any) => user.username + ':' + user.password),
+            },
+          }
+        }
+        if (inbound.type === Inbound.VLESS) {
+          return {
+            ...extra,
+            vless: {
+              listen: restoreListen(inbound),
+              users: (inbound.users || []).map((user: any) => user.uuid || '').filter(Boolean),
+              tls: {
+                enabled: inbound.tls?.enabled ?? true,
+                server_name: inbound.tls?.server_name || '',
+                reality: {
+                  enabled: inbound.tls?.reality?.enabled ?? true,
+                  handshake: {
+                    server: inbound.tls?.reality?.handshake?.server || '',
+                    server_port: inbound.tls?.reality?.handshake?.server_port || 443,
+                  },
+                  private_key: inbound.tls?.reality?.private_key || '',
+                  short_id: inbound.tls?.reality?.short_id || [],
+                },
+              },
+            },
+          }
+        }
+        if (inbound.type === Inbound.Trojan) {
+          return {
+            ...extra,
+            trojan: {
+              listen: restoreListen(inbound),
+              users: (inbound.users || []).map((user: any) => user.password || '').filter(Boolean),
+              tls: {
+                enabled: inbound.tls?.enabled ?? true,
+                server_name: inbound.tls?.server_name || '',
+                alpn: inbound.tls?.alpn || ['h2', 'http/1.1'],
+                min_version: inbound.tls?.min_version || '1.3',
+                max_version: inbound.tls?.max_version || '1.3',
+              },
             },
           }
         }

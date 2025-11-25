@@ -19,6 +19,8 @@ export enum Inbound {
   Socks = 'socks',
   Http = 'http',
   Tun = 'tun',
+  VLESS = 'vless',
+  Trojan = 'trojan',
 }
 
 export enum Outbound {

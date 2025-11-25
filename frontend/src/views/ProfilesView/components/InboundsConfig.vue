@@ -8,6 +8,8 @@ import {
   DefaultInboundHttp,
   DefaultInboundSocks,
   DefaultInboundTun,
+  DefaultInboundVless,
+  DefaultInboundTrojan,
 } from '@/constant/profile'
 import { Inbound } from '@/enums/kernel'
 import { picker, sampleID } from '@/utils'
@@ -69,6 +71,30 @@ const inbounds = [
       })
     },
   },
+  {
+    label: 'VLESS Reality',
+    value: () => {
+      model.value.push({
+        id: sampleID(),
+        tag: 'vless-reality-in',
+        type: Inbound.VLESS,
+        enable: true,
+        vless: DefaultInboundVless(),
+      })
+    },
+  },
+  {
+    label: 'Trojan TLS',
+    value: () => {
+      model.value.push({
+        id: sampleID(),
+        tag: 'trojan-tls-in',
+        type: Inbound.Trojan,
+        enable: true,
+        trojan: DefaultInboundTrojan(),
+      })
+    },
+  },
 ]
 
 const handleAdd = async () => {
@@ -116,7 +142,16 @@ defineExpose({ handleAdd })
         </div>
         <div :class="{ 'items-start': inbound[inbound.type]!.users.length }" class="form-item">
           {{ t('kernel.inbounds.users') }}
-          <InputList v-model="inbound[inbound.type]!.users" placeholder="user:password" />
+          <InputList
+            v-model="inbound[inbound.type]!.users"
+            :placeholder="
+              inbound.type === Inbound.VLESS
+                ? t('kernel.inbounds.vless.uuidPlaceholder')
+                : inbound.type === Inbound.Trojan
+                  ? t('kernel.inbounds.trojan.passwordPlaceholder')
+                  : 'user:password'
+            "
+          />
         </div>
         <div class="form-item">
           {{ t('kernel.inbounds.listen.tcp_fast_open') }}
@@ -130,6 +165,46 @@ defineExpose({ handleAdd })
           {{ t('kernel.inbounds.listen.udp_fragment') }}
           <Switch v-model="inbound[inbound.type]!.listen.udp_fragment" />
         </div>
+        <template v-if="inbound.type === Inbound.VLESS && inbound.vless">
+          <div class="form-item">
+            {{ t('kernel.inbounds.vless.serverName') }}
+            <Input v-model="inbound.vless.tls.server_name" />
+          </div>
+          <div class="form-item">
+            {{ t('kernel.inbounds.vless.handshakeServer') }}
+            <Input v-model="inbound.vless.tls.reality.handshake.server" />
+          </div>
+          <div class="form-item">
+            {{ t('kernel.inbounds.vless.handshakePort') }}
+            <Input v-model="inbound.vless.tls.reality.handshake.server_port" type="number" />
+          </div>
+          <div class="form-item">
+            {{ t('kernel.inbounds.vless.privateKey') }}
+            <Input v-model="inbound.vless.tls.reality.private_key" editable />
+          </div>
+          <div :class="{ 'items-start': inbound.vless.tls.reality.short_id.length }" class="form-item">
+            {{ t('kernel.inbounds.vless.shortId') }}
+            <InputList v-model="inbound.vless.tls.reality.short_id" placeholder="short id" />
+          </div>
+        </template>
+        <template v-else-if="inbound.type === Inbound.Trojan && inbound.trojan">
+          <div class="form-item">
+            {{ t('kernel.inbounds.trojan.serverName') }}
+            <Input v-model="inbound.trojan.tls.server_name" />
+          </div>
+          <div :class="{ 'items-start': inbound.trojan.tls.alpn.length }" class="form-item">
+            {{ t('kernel.inbounds.trojan.alpn') }}
+            <InputList v-model="inbound.trojan.tls.alpn" placeholder="h2" />
+          </div>
+          <div class="form-item">
+            {{ t('kernel.inbounds.trojan.minVersion') }}
+            <Input v-model="inbound.trojan.tls.min_version" />
+          </div>
+          <div class="form-item">
+            {{ t('kernel.inbounds.trojan.maxVersion') }}
+            <Input v-model="inbound.trojan.tls.max_version" />
+          </div>
+        </template>
       </div>
       <div v-else-if="inbound.type === Inbound.Tun && inbound.tun">
         <div class="form-item">

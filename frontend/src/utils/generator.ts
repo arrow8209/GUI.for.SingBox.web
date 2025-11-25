@@ -64,32 +64,90 @@ const generateExperimental = (experimental: IExperimental, outbounds: IOutbound[
   }
 }
 
+const normalizeListen = (listen?: InboundListen) => ({
+  listen: listen?.listen || '0.0.0.0',
+  listen_port: listen?.listen_port || 0,
+  tcp_fast_open: !!listen?.tcp_fast_open,
+  tcp_multi_path: !!listen?.tcp_multi_path,
+  udp_fragment: !!listen?.udp_fragment,
+})
+
 const generateInbounds = (inbounds: IInbound[]) => {
   return inbounds.flatMap((inbound) => {
     if (!inbound.enable) return []
-    if (inbound.type !== Inbound.Tun) {
-      const users = inbound[inbound.type]!.users.map((user) => ({
-        username: user.split(':')[0],
-        password: user.split(':')[1],
-      }))
+    if (inbound.type === Inbound.Tun && inbound.tun) {
       return {
         type: inbound.type,
         tag: inbound.tag,
-        ...inbound[inbound.type]!.listen,
-        users: users.length > 0 ? users : undefined,
-      }
-    }
-    if (inbound.type === Inbound.Tun) {
-      return {
-        type: inbound.type,
-        tag: inbound.tag,
-        ...inbound.tun!,
-        route_address: inbound.tun!.route_address?.length ? inbound.tun!.route_address : undefined,
-        route_exclude_address: inbound.tun!.route_exclude_address?.length
-          ? inbound.tun!.route_exclude_address
+        ...inbound.tun,
+        route_address: inbound.tun.route_address?.length ? inbound.tun.route_address : undefined,
+        route_exclude_address: inbound.tun.route_exclude_address?.length
+          ? inbound.tun.route_exclude_address
           : undefined,
       }
     }
+
+    if (
+      inbound.type === Inbound.Mixed ||
+      inbound.type === Inbound.Http ||
+      inbound.type === Inbound.Socks
+    ) {
+      const section = (inbound as any)[inbound.type] as { listen: InboundListen; users: string[] }
+      const users = section.users.flatMap((user: string) => {
+        const [username, password] = user.split(':')
+        if (!username || !password) {
+          return []
+        }
+        return [{ username, password }]
+      })
+      return {
+        type: inbound.type,
+        tag: inbound.tag,
+        ...normalizeListen(section.listen),
+        users: users.length > 0 ? users : undefined,
+      }
+    }
+
+    if (inbound.type === Inbound.VLESS && inbound.vless) {
+      return {
+        type: inbound.type,
+        tag: inbound.tag,
+        ...normalizeListen(inbound.vless.listen),
+        users: inbound.vless.users.length
+          ? inbound.vless.users.map((uuid) => ({ uuid }))
+          : undefined,
+        tls: {
+          enabled: inbound.vless.tls.enabled,
+          server_name: inbound.vless.tls.server_name,
+          reality: {
+            enabled: inbound.vless.tls.reality.enabled,
+            handshake: inbound.vless.tls.reality.handshake,
+            private_key: inbound.vless.tls.reality.private_key,
+            short_id: inbound.vless.tls.reality.short_id,
+          },
+        },
+      }
+    }
+
+    if (inbound.type === Inbound.Trojan && inbound.trojan) {
+      return {
+        type: inbound.type,
+        tag: inbound.tag,
+        ...normalizeListen(inbound.trojan.listen),
+        users: inbound.trojan.users.length
+          ? inbound.trojan.users.map((password) => ({ password }))
+          : undefined,
+        tls: {
+          enabled: inbound.trojan.tls.enabled,
+          server_name: inbound.trojan.tls.server_name,
+          alpn: inbound.trojan.tls.alpn,
+          min_version: inbound.trojan.tls.min_version,
+          max_version: inbound.trojan.tls.max_version,
+        },
+      }
+    }
+
+    return []
   })
 }
 

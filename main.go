@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,12 +14,15 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"gopkg.in/yaml.v3"
 
 	"guiforcores/bridge"
 	"guiforcores/pkg/eventbus"
@@ -32,6 +37,50 @@ type Server struct {
 	httpServer *http.Server
 	staticFS   http.FileSystem
 	shutdown   chan struct{}
+	auth       *AuthConfig
+	sessions   map[string]time.Time
+	sessionTTL time.Duration
+	mu         sync.Mutex
+}
+
+type AuthConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
+func loadAuthConfig() *AuthConfig {
+	path := filepath.Join(bridge.Env.BasePath, "data", "auth.yaml")
+	cfg := &AuthConfig{
+		Username: "admin",
+		Password: "admin123",
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		writeAuthConfig(path, cfg)
+		return cfg
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Fatalf("failed to read auth config: %v", err)
+	}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		log.Fatalf("failed to parse auth config: %v", err)
+	}
+	return cfg
+}
+
+func writeAuthConfig(path string, cfg *AuthConfig) {
+	if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
+		log.Printf("failed to create auth config directory: %v", err)
+		return
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		log.Printf("failed to marshal auth config: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("failed to write auth config: %v", err)
+	}
 }
 
 func NewServer(app *bridge.App, bus *eventbus.Bus) *Server {
@@ -39,11 +88,16 @@ func NewServer(app *bridge.App, bus *eventbus.Bus) *Server {
 	if err != nil {
 		panic(err)
 	}
+	authCfg := loadAuthConfig()
+
 	server := &Server{
-		app:      app,
-		bus:      bus,
-		staticFS: http.FS(sub),
-		shutdown: make(chan struct{}),
+		app:        app,
+		bus:        bus,
+		staticFS:   http.FS(sub),
+		shutdown:   make(chan struct{}),
+		auth:       authCfg,
+		sessions:   make(map[string]time.Time),
+		sessionTTL: 24 * time.Hour,
 	}
 	app.Exit = server.Shutdown
 	return server
@@ -62,24 +116,27 @@ func (s *Server) Run(addr string) error {
 	router.Use(middleware.Recoverer)
 
 	router.Route("/api", func(api chi.Router) {
-		s.registerAppRoutes(api)
-		api.Route("/files", func(files chi.Router) {
-			s.registerFileRoutes(files)
-		})
-		api.Route("/exec", func(exec chi.Router) {
-			s.registerExecRoutes(exec)
-		})
-		api.Route("/http", func(httpRouter chi.Router) {
-			s.registerHTTPRoutes(httpRouter)
-		})
-		api.Route("/mmdb", func(mmdb chi.Router) {
-			s.registerMMDBRoutes(mmdb)
+		api.Post("/login", s.handleLogin)
+		api.Group(func(private chi.Router) {
+			private.Use(s.authMiddleware)
+			s.registerAppRoutes(private)
+			private.Route("/files", func(files chi.Router) {
+				s.registerFileRoutes(files)
+			})
+			private.Route("/exec", func(exec chi.Router) {
+				s.registerExecRoutes(exec)
+			})
+			private.Route("/http", func(httpRouter chi.Router) {
+				s.registerHTTPRoutes(httpRouter)
+			})
+			private.Route("/mmdb", func(mmdb chi.Router) {
+				s.registerMMDBRoutes(mmdb)
+			})
+			private.Post("/logout", s.handleLogout)
 		})
 	})
 
-	router.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		s.bus.ServeWS(w, r)
-	})
+	router.HandleFunc("/ws", s.handleWebsocket)
 
 	router.Handle("/*", s.spaHandler())
 	router.Handle("/", s.spaHandler())
@@ -194,6 +251,89 @@ func (s *Server) registerAppRoutes(r chi.Router) {
 		resp := s.app.Notify(payload.Title, payload.Message, payload.Icon, payload.Options)
 		writeJSON(w, http.StatusOK, resp)
 	})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	type payload struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	var body payload
+	if err := decodeJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if body.Username != s.auth.Username || body.Password != s.auth.Password {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		return
+	}
+	token := s.generateToken()
+	s.mu.Lock()
+	s.sessions[token] = time.Now().Add(s.sessionTTL)
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	token := getBearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	s.mu.Lock()
+	delete(s.sessions, token)
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := getBearerToken(r.Header.Get("Authorization"))
+		if token == "" || !s.validateToken(token) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) generateToken() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return hex.EncodeToString([]byte(time.Now().String()))
+	}
+	return hex.EncodeToString(buf)
+}
+
+func (s *Server) validateToken(token string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	expiry, ok := s.sessions[token]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expiry) {
+		delete(s.sessions, token)
+		return false
+	}
+	return true
+}
+
+func (s *Server) handleWebsocket(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" || !s.validateToken(token) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	s.bus.ServeWS(w, r)
+}
+
+func getBearerToken(header string) string {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return ""
+	}
+	return strings.TrimSpace(header[len(prefix):])
 }
 
 func (s *Server) registerFileRoutes(r chi.Router) {

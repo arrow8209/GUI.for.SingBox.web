@@ -9,17 +9,29 @@ let manualClose = false
 const messageQueue: string[] = []
 
 import { apiBaseURL } from './http'
+import { useAuthStore } from '@/stores/auth'
 
 const apiUrl = new URL(apiBaseURL, window.location.origin)
-const WS_URL = `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}/ws`
+const BASE_WS_URL = `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}/ws`
+
+const getWsUrl = () => {
+  const token = useAuthStore().token
+  if (!token) return ''
+  const query = `?token=${encodeURIComponent(token)}`
+  return `${BASE_WS_URL}${query}`
+}
 
 function connect() {
+  const wsUrl = getWsUrl()
+  if (!wsUrl) {
+    return
+  }
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return
   }
 
   manualClose = false
-  socket = new WebSocket(WS_URL.replace(/\/+/g, '/'))
+  socket = new WebSocket(wsUrl)
 
   socket.onopen = () => {
     reconnectTimer = 1000

@@ -4,3 +4,4 @@ frontend/dist
 data/
 tmp/
 .DS_Store
+bin/gui-singbox

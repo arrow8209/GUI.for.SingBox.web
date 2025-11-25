@@ -1,3 +1,5 @@
+项目来源与 https://github.com/GUI-for-Cores/GUI.for.SingBox，将原有项目改为web版本，方便服务器部署
+
 <div align="center">
   <img src="build/appicon.png" alt="GUI.for.SingBox" width="200">
   <h1>GUI.for.SingBox</h1>

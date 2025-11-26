@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { useI18n } from 'vue-i18n'
 
+import { ClipboardSetText, GetRealityPublicKey } from '@/bridge'
 import { DraggableOptions } from '@/constant/app'
 import { TunStackOptions } from '@/constant/kernel'
 import {
@@ -12,7 +13,7 @@ import {
   DefaultInboundTrojan,
 } from '@/constant/profile'
 import { Inbound } from '@/enums/kernel'
-import { picker, sampleID } from '@/utils'
+import { message, picker, sampleID } from '@/utils'
 
 const model = defineModel<IProfile['inbounds']>({ required: true })
 
@@ -102,6 +103,111 @@ const handleAdd = async () => {
   fns.forEach((fn) => fn())
 }
 
+const pickHost = (...hosts: (string | undefined)[]) => {
+  return hosts.find((host) => typeof host === 'string' && host.trim().length > 0)?.trim() || ''
+}
+
+const ensurePort = (port?: number) => {
+  if (!port || port <= 0) {
+    throw new Error(t('kernel.inbounds.exportMissingPort'))
+  }
+  return port
+}
+
+const ensureUser = (users?: string[]) => {
+  const value = users?.find((user) => user.trim().length > 0)
+  if (!value) {
+    throw new Error(t('kernel.inbounds.exportMissingUser'))
+  }
+  return value
+}
+
+const createQueryString = (params: Record<string, string | number | undefined>) => {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return
+    search.set(key, String(value))
+  })
+  return search.toString()
+}
+
+const buildVlessRealityLink = async (inbound: IInbound) => {
+  const details = inbound.vless
+  if (!details?.tls.reality.enabled) throw new Error(t('kernel.inbounds.exportUnsupported'))
+
+  const uuid = ensureUser(details.users)
+  const host = pickHost(details.tls.reality.handshake.server, details.listen.listen)
+  if (!host) throw new Error(t('kernel.inbounds.exportMissingServer'))
+
+  const port = ensurePort(details.tls.reality.handshake.server_port || details.listen.listen_port)
+  const privateKey = details.tls.reality.private_key.trim()
+  if (!privateKey) throw new Error(t('kernel.inbounds.exportMissingPrivateKey'))
+
+  const publicKey = await GetRealityPublicKey(privateKey)
+  const shortId = details.tls.reality.short_id.find((id) => id.trim().length > 0) || ''
+  const query = createQueryString({
+    encryption: 'none',
+    flow: 'xtls-rprx-vision',
+    security: 'reality',
+    sni: pickHost(details.tls.server_name, host),
+    pbk: publicKey,
+    sid: shortId,
+    type: 'tcp',
+  })
+  const fragment = encodeURIComponent(inbound.tag || 'vless')
+  const base = `vless://${uuid}@${host}:${port}`
+  return `${base}${query ? `?${query}` : ''}#${fragment}`
+}
+
+const buildTrojanTLSLink = (inbound: IInbound) => {
+  const details = inbound.trojan
+  if (!details?.tls.enabled) throw new Error(t('kernel.inbounds.exportUnsupported'))
+  const password = ensureUser(details.users)
+  const host = pickHost(details.tls.server_name, details.listen.listen)
+  if (!host) throw new Error(t('kernel.inbounds.exportMissingServer'))
+  const port = ensurePort(details.listen.listen_port)
+  const query = createQueryString({
+    security: 'tls',
+    sni: pickHost(details.tls.server_name, host),
+    alpn: details.tls.alpn.length ? details.tls.alpn.join(',') : undefined,
+    type: 'tcp',
+  })
+  const fragment = encodeURIComponent(inbound.tag || 'trojan')
+  const base = `trojan://${encodeURIComponent(password)}@${host}:${port}`
+  return `${base}${query ? `?${query}` : ''}#${fragment}`
+}
+
+const buildShareLink = async (inbound: IInbound) => {
+  if (inbound.type === Inbound.VLESS) {
+    return buildVlessRealityLink(inbound)
+  }
+  if (inbound.type === Inbound.Trojan) {
+    return buildTrojanTLSLink(inbound)
+  }
+  throw new Error(t('kernel.inbounds.exportUnsupported'))
+}
+
+const canExportInbound = (inbound: IInbound) => {
+  if (inbound.type === Inbound.VLESS) {
+    return Boolean(inbound.vless?.tls.reality.enabled)
+  }
+  if (inbound.type === Inbound.Trojan) {
+    return Boolean(inbound.trojan?.tls.enabled)
+  }
+  return false
+}
+
+const handleExport = async (inbound: IInbound) => {
+  try {
+    const link = await buildShareLink(inbound)
+    const copied = await ClipboardSetText(link)
+    if (!copied) throw new Error('ClipboardSetText Error')
+    message.success(t('common.copied'))
+  } catch (error: any) {
+    message.error(error?.message || error || t('common.error'))
+  }
+}
+
 defineExpose({ handleAdd })
 </script>
 
@@ -121,7 +227,17 @@ defineExpose({ handleAdd })
         <Icon icon="drag" class="drag cursor-move" />
       </template>
       <template #extra>
-        <Button @click="handleDelete(index)" icon="delete" type="text" size="small" />
+        <div class="flex gap-4">
+          <Button
+            v-if="canExportInbound(inbound)"
+            @click="handleExport(inbound)"
+            icon="link"
+            type="text"
+            size="small"
+            v-tips="'kernel.inbounds.export'"
+          />
+          <Button @click="handleDelete(index)" icon="delete" type="text" size="small" />
+        </div>
       </template>
       <div class="form-item">
         {{ t('kernel.inbounds.enable') }}

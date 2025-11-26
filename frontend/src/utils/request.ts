@@ -1,5 +1,7 @@
 import { parse } from 'yaml'
 
+import { useAuthStore } from '@/stores/auth'
+
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 enum ResponseType {
@@ -10,7 +12,7 @@ enum ResponseType {
 
 type RequestOptions = {
   base?: string
-  bearer?: string
+  headers?: Record<string, string>
   timeout?: number
   responseType?: keyof typeof ResponseType
   beforeRequest?: () => void
@@ -18,17 +20,17 @@ type RequestOptions = {
 
 export class Request {
   public base: string
-  public bearer: string
   public timeout: number
   public responseType: string
   public beforeRequest: () => void
+  public headers: Record<string, string>
 
   constructor(options: RequestOptions = {}) {
     this.base = options.base || ''
-    this.bearer = options.bearer || ''
     this.timeout = options.timeout || 10000
     this.responseType = options.responseType || ResponseType.JSON
     this.beforeRequest = options.beforeRequest || (() => 0)
+    this.headers = options.headers || {}
   }
 
   private request = async <T>(
@@ -42,15 +44,17 @@ export class Request {
     const init: RequestInit = {
       method: options.method,
       signal: controller.signal,
+      headers: { ...this.headers },
     }
 
     if (this.base) {
       url = this.base + url
     }
 
-    if (this.bearer) {
+    const authStore = useAuthStore()
+    if (authStore.token) {
       if (!init.headers) init.headers = {}
-      Object.assign(init.headers, { Authorization: `Bearer ${this.bearer}` })
+      Object.assign(init.headers, { Authorization: `Bearer ${authStore.token}` })
     }
 
     if (['GET'].includes(options.method)) {
@@ -59,6 +63,8 @@ export class Request {
     }
 
     if (['POST', 'PUT', 'PATCH'].includes(options.method)) {
+      if (!init.headers) init.headers = {}
+      Object.assign(init.headers, { 'Content-Type': 'application/json' })
       init.body = JSON.stringify(options.body || {})
     }
 

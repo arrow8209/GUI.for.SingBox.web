@@ -5,3 +5,6 @@ data/
 tmp/
 .DS_Store
 bin/gui-singbox
+gui-singbox
+guiforcores
+bin/nohup.out

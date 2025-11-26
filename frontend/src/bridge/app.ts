@@ -35,6 +35,13 @@ export const GetInterfaces = async () => {
   return data.split('|').filter(Boolean)
 }
 
+export const GetRealityPublicKey = async (privateKey: string) => {
+  const res = await httpClient.post<{ public_key: string }>('/reality/public-key', {
+    private_key: privateKey,
+  })
+  return res.public_key
+}
+
 export type EnvResult = {
   appName: string
   appVersion: string

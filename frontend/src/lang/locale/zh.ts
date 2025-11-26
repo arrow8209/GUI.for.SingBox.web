@@ -91,6 +91,12 @@ export default {
       enable: '启用',
       tag: '名称',
       users: 'Http/Socks验证用户',
+      export: '导出连接',
+      exportUnsupported: '该入站不支持导出',
+      exportMissingUser: '请先配置至少一个用户',
+      exportMissingServer: '请填写服务器地址',
+      exportMissingPort: '请填写端口',
+      exportMissingPrivateKey: 'Reality 私钥不能为空',
       listen: {
         listen: '监听地址',
         listen_port: '端口',

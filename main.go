@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdh"
 	"crypto/rand"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -22,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/gorilla/websocket"
 	"gopkg.in/yaml.v3"
 
 	"guiforcores/bridge"
@@ -30,6 +36,11 @@ import (
 
 //go:embed all:frontend/dist
 var distFS embed.FS
+
+var (
+	hopHeaders     = []string{"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade"}
+	coreHTTPClient = &http.Client{Timeout: 30 * time.Second}
+)
 
 type Server struct {
 	app        *bridge.App
@@ -131,6 +142,9 @@ func (s *Server) Run(addr string) error {
 			})
 			private.Route("/mmdb", func(mmdb chi.Router) {
 				s.registerMMDBRoutes(mmdb)
+			})
+			private.Route("/core", func(core chi.Router) {
+				core.HandleFunc("/*", s.handleCoreProxy)
 			})
 			private.Post("/logout", s.handleLogout)
 		})
@@ -251,6 +265,31 @@ func (s *Server) registerAppRoutes(r chi.Router) {
 		resp := s.app.Notify(payload.Title, payload.Message, payload.Icon, payload.Options)
 		writeJSON(w, http.StatusOK, resp)
 	})
+
+	r.Post("/reality/public-key", func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			PrivateKey string `json:"private_key"`
+		}
+		if err := decodeJSON(r, &payload); err != nil {
+			writeJSONError(w, err)
+			return
+		}
+		privateKeyBytes, err := decodeRealityPrivateKey(payload.PrivateKey)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		curve := ecdh.X25519()
+		privateKey, err := curve.NewPrivateKey(privateKeyBytes)
+		if err != nil {
+			writeJSONError(w, err)
+			return
+		}
+		publicKey := privateKey.PublicKey().Bytes()
+		writeJSON(w, http.StatusOK, map[string]string{
+			"public_key": base64.RawStdEncoding.EncodeToString(publicKey),
+		})
+	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -289,6 +328,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := getBearerToken(r.Header.Get("Authorization"))
+		if token == "" && websocket.IsWebSocketUpgrade(r) {
+			token = r.URL.Query().Get("token")
+		}
 		if token == "" || !s.validateToken(token) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
@@ -640,6 +682,150 @@ func (s *Server) registerMMDBRoutes(r chi.Router) {
 	})
 }
 
+func (s *Server) handleCoreProxy(w http.ResponseWriter, r *http.Request) {
+	coreBase := r.Header.Get("X-Core-Base")
+	if coreBase == "" {
+		coreBase = r.URL.Query().Get("coreBase")
+	}
+	if coreBase == "" {
+		http.Error(w, "missing core base", http.StatusBadRequest)
+		return
+	}
+	baseURL, err := url.Parse(coreBase)
+	if err != nil {
+		http.Error(w, "invalid core base", http.StatusBadRequest)
+		return
+	}
+	if !isLoopbackHost(baseURL.Hostname()) {
+		http.Error(w, "core base must be loopback", http.StatusForbidden)
+		return
+	}
+	pathParam := chi.URLParam(r, "*")
+	if !strings.HasPrefix(pathParam, "/") {
+		pathParam = "/" + pathParam
+	}
+	query := r.URL.Query()
+	query.Del("coreBase")
+	query.Del("coreBearer")
+	query.Del("token")
+	rel := &url.URL{Path: pathParam, RawQuery: query.Encode()}
+	targetURL := baseURL.ResolveReference(rel)
+	bearer := r.Header.Get("X-Core-Bearer")
+	if bearer == "" {
+		bearer = r.URL.Query().Get("coreBearer")
+	}
+	if websocket.IsWebSocketUpgrade(r) {
+		s.proxyCoreWebsocket(w, r, targetURL, bearer)
+		return
+	}
+	s.proxyCoreHTTP(w, r, targetURL, bearer)
+}
+
+func (s *Server) proxyCoreHTTP(w http.ResponseWriter, r *http.Request, target *url.URL, bearer string) {
+	var bodyBytes []byte
+	if r.Body != nil {
+		bodyBytes, _ = io.ReadAll(r.Body)
+		r.Body.Close()
+	}
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(bodyBytes))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	copyHeaders(req.Header, r.Header)
+	req.Header.Del("Host")
+	req.Header.Del("Content-Length")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := coreHTTPClient.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	copyHeaders(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (s *Server) proxyCoreWebsocket(w http.ResponseWriter, r *http.Request, target *url.URL, bearer string) {
+	wsURL := *target
+	switch wsURL.Scheme {
+	case "http":
+		wsURL.Scheme = "ws"
+	case "https":
+		wsURL.Scheme = "wss"
+	}
+	header := http.Header{}
+	if bearer != "" {
+		header.Set("Authorization", "Bearer "+bearer)
+	}
+	backendConn, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
+	if err != nil {
+		status := http.StatusBadGateway
+		message := err.Error()
+		if resp != nil {
+			status = resp.StatusCode
+			message = resp.Status
+		}
+		http.Error(w, message, status)
+		return
+	}
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	clientConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		backendConn.Close()
+		return
+	}
+	errCh := make(chan error, 2)
+	go proxyWebsocketPump(clientConn, backendConn, errCh)
+	go proxyWebsocketPump(backendConn, clientConn, errCh)
+	<-errCh
+	backendConn.Close()
+	clientConn.Close()
+}
+
+func proxyWebsocketPump(src, dst *websocket.Conn, errCh chan<- error) {
+	for {
+		msgType, msg, err := src.ReadMessage()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if err := dst.WriteMessage(msgType, msg); err != nil {
+			errCh <- err
+			return
+		}
+	}
+}
+
+func copyHeaders(dst, src http.Header) {
+	for key, values := range src {
+		ignore := false
+		for _, hop := range hopHeaders {
+			if strings.EqualFold(key, hop) {
+				ignore = true
+				break
+			}
+		}
+		if ignore {
+			continue
+		}
+		for _, v := range values {
+			dst.Add(key, v)
+		}
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // ---- Utilities ----
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -662,6 +848,41 @@ func decodeJSON(r *http.Request, v any) error {
 		return errors.New("empty body")
 	}
 	return json.Unmarshal(body, v)
+}
+
+func decodeRealityPrivateKey(value string) ([]byte, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, errors.New("empty private key")
+	}
+	if decoded, err := base64.RawStdEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	if decoded, err := base64.RawURLEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(padBase64(value)); err == nil {
+		return decoded, nil
+	}
+	if decoded, err := base64.URLEncoding.DecodeString(padBase64(value)); err == nil {
+		return decoded, nil
+	}
+	value = strings.TrimPrefix(value, "0x")
+	if decoded, err := hex.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	return nil, errors.New("invalid private key encoding")
+}
+
+func padBase64(value string) string {
+	if value == "" {
+		return value
+	}
+	padding := len(value) % 4
+	if padding == 0 {
+		return value
+	}
+	return value + strings.Repeat("=", 4-padding)
 }
 
 func (s *Server) spaHandler() http.HandlerFunc {

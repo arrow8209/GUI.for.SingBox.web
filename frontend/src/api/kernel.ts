@@ -1,3 +1,4 @@
+import { apiBaseURL } from '@/bridge/http'
 import { useAppSettingsStore, useProfilesStore } from '@/stores'
 import { Request } from '@/utils/request'
 
@@ -13,24 +14,18 @@ export enum Api {
   Logs = '/logs',
 }
 
+type CoreConnectionOptions = {
+  coreBase: string
+  coreBearer: string
+}
+
 const setupKernelApi = () => {
-  const appSettingsStore = useAppSettingsStore()
-  const profilesStore = useProfilesStore()
-
-  const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
-
-  let base = 'http://127.0.0.1:20123'
-  let bearer = ''
-
-  if (profile) {
-    const controller = profile.experimental.clash_api.external_controller || '127.0.0.1:20123'
-    const [, port = 20123] = controller.split(':')
-    base = `http://127.0.0.1:${port}`
-    bearer = profile.experimental.clash_api.secret
+  const { coreBase, coreBearer } = resolveCoreConnection()
+  request.base = getCoreProxyBase()
+  request.headers = {
+    'X-Core-Base': coreBase,
+    ...(coreBearer ? { 'X-Core-Bearer': coreBearer } : {}),
   }
-
-  request.base = base
-  request.bearer = bearer
 }
 
 const request = new Request({ beforeRequest: setupKernelApi, timeout: 60 * 1000 })
@@ -54,4 +49,57 @@ export const getProxyDelay = (proxy: string, url: string) => {
     url,
     timeout: 5000,
   })
+}
+
+export const resolveCoreConnection = (): CoreConnectionOptions => {
+  const appSettingsStore = useAppSettingsStore()
+  const profilesStore = useProfilesStore()
+  const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
+  const controller = (profile?.experimental.clash_api.external_controller || '127.0.0.1:20123').trim()
+  let normalized = controller
+  if (!normalized.includes('://')) {
+    normalized = `http://${normalized}`
+  }
+  let coreBase = 'http://127.0.0.1:20123'
+  try {
+    const url = new URL(normalized)
+    let host = url.hostname || '127.0.0.1'
+    if (host === '0.0.0.0') host = '127.0.0.1'
+    if (host === '' || host === '*') host = '127.0.0.1'
+    if (host === '::') host = '::1'
+    if (!host.startsWith('127.') && host !== '::1' && host !== 'localhost') {
+      host = '127.0.0.1'
+    }
+    const port = url.port || '20123'
+    const protocol = url.protocol === 'https:' ? 'https' : 'http'
+    coreBase = `${protocol}://${host}:${port}`
+  } catch (error) {
+    console.error('[kernelApi] failed to parse controller address, fallback to loopback', error)
+  }
+  return {
+    coreBase,
+    coreBearer: profile?.experimental.clash_api.secret || '',
+  }
+}
+
+export const getCoreProxyBase = () => {
+  let base = apiBaseURL || '/api'
+  if (base.endsWith('/')) {
+    base = base.slice(0, -1)
+  }
+  if (!base.startsWith('http')) {
+    if (!base.startsWith('/')) {
+      base = '/' + base
+    }
+    return `${base}/core`
+  }
+  try {
+    const url = new URL(base, window.location.origin)
+    url.pathname = (url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname) + '/core'
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return '/api/core'
+  }
 }

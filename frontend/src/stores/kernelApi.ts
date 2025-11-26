@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
-import { getProxies, getConfigs, setConfigs, Api } from '@/api/kernel'
+import { getProxies, getConfigs, setConfigs, Api, resolveCoreConnection, getCoreProxyBase } from '@/api/kernel'
 import { ProcessInfo, KillProcess, ExecBackground, ReadFile, WriteFile, RemoveFile } from '@/bridge'
 import {
   CoreConfigFilePath,
@@ -22,6 +22,7 @@ import {
   useSubscribesStore,
   useRulesetsStore,
 } from '@/stores'
+import { useAuthStore } from '@/stores/auth'
 import {
   generateConfigFile,
   updateTrayMenus,
@@ -47,6 +48,22 @@ import type {
 
 export type ProxyType = 'mixed' | 'http' | 'socks'
 
+const resolveCoreProxyWSBase = () => {
+  const httpBase = getCoreProxyBase()
+  try {
+    if (httpBase.startsWith('http')) {
+      const url = new URL(httpBase, window.location.origin)
+      const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      return `${protocol}//${url.host}${url.pathname}`
+    }
+  } catch (error) {
+    console.error('[kernelApi] failed to resolve core proxy base, fallback to relative ws path', error)
+  }
+  const normalized = httpBase.startsWith('/') ? httpBase : '/' + httpBase
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}${normalized}`
+}
+
 export const useKernelApiStore = defineStore('kernelApi', () => {
   const envStore = useEnvStore()
   const logsStore = useLogsStore()
@@ -55,6 +72,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
   const subscribesStore = useSubscribesStore()
   const rulesetsStore = useRulesetsStore()
   const appSettingsStore = useAppSettingsStore()
+  const authStore = useAuthStore()
 
   /** RESTful API */
   const config = ref<CoreApiConfig>({
@@ -77,16 +95,44 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
 
   const refreshConfig = async () => {
     const _config = await getConfigs()
+    console.info('[kernelApi] fetched configs from core', _config)
 
     config.value = {
       ..._config,
       tun: config.value.tun,
     }
 
+    const summarizeInbound = (inbound: IInbound) => ({
+      tag: inbound.tag,
+      type: inbound.type,
+      mixed: inbound.mixed?.listen.listen_port,
+      http: inbound.http?.listen.listen_port,
+      socks: inbound.socks?.listen.listen_port,
+      tun: inbound.tun?.interface_name,
+    })
+
     if (!runtimeProfile) {
-      const txt = await ReadFile(CoreConfigFilePath)
-      runtimeProfile = restoreProfile(JSON.parse(txt))
+      try {
+        const txt = await ReadFile(CoreConfigFilePath)
+        runtimeProfile = restoreProfile(JSON.parse(txt))
+        console.info('[kernelApi] restored runtime profile', {
+          path: CoreConfigFilePath,
+          inbounds: runtimeProfile.inbounds.map(summarizeInbound),
+        })
+      } catch (error) {
+        console.error('[kernelApi] failed to restore runtime profile', error)
+      }
       const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
+      if (!runtimeProfile && profile) {
+        runtimeProfile = deepClone(profile)
+        console.info('[kernelApi] fallback runtime profile created from selected profile', {
+          id: profile.id,
+        })
+      }
+      if (!runtimeProfile) {
+        console.warn('[kernelApi] runtime profile unavailable')
+        return
+      }
       if (profile) {
         const _profile = deepClone(profile)
         runtimeProfile.inbounds.forEach((inbound) => {
@@ -110,6 +156,11 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       }
     }
 
+    if (!runtimeProfile) {
+      console.warn('[kernelApi] runtime profile unavailable after refresh')
+      return
+    }
+
     const mixed = runtimeProfile.inbounds.find((v) => v.mixed)
     const http = runtimeProfile.inbounds.find((v) => v.http)
     const socks = runtimeProfile.inbounds.find((v) => v.socks)
@@ -127,6 +178,15 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     config.value.tun.device = tun?.tun?.interface_name || ''
     config.value.tun.stack = tun?.tun?.stack || ''
     config.value['interface-name'] = runtimeProfile.route.default_interface
+
+    console.info('[kernelApi] refreshConfig computed ports', {
+      mixed: config.value['mixed-port'],
+      http: config.value['port'],
+      socks: config.value['socks-port'],
+      allowLan: config.value['allow-lan'],
+      tun: config.value.tun,
+      interfaceName: config.value['interface-name'],
+    })
   }
 
   const updateConfig = async (field: string, value: any) => {
@@ -255,17 +315,16 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
   const initCoreWebsockets = () => {
     websocketInstance = new WebSockets({
       beforeConnect() {
-        let base = 'ws://127.0.0.1:20123'
-        let bearer = ''
-        const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
-        if (profile) {
-          const controller = profile.experimental.clash_api.external_controller || '127.0.0.1:20123'
-          const [, port = 20123] = controller.split(':')
-          base = `ws://127.0.0.1:${port}`
-          bearer = profile.experimental.clash_api.secret
+        const { coreBase, coreBearer } = resolveCoreConnection()
+        this.base = resolveCoreProxyWSBase()
+        const params: Record<string, string> = { coreBase }
+        if (coreBearer) {
+          params.coreBearer = coreBearer
         }
-        this.base = base
-        this.bearer = bearer
+        if (authStore.token) {
+          params.token = authStore.token
+        }
+        this.params = params
       },
     })
 

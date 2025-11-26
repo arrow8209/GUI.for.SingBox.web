@@ -91,6 +91,12 @@ export default {
       enable: 'Enable',
       tag: 'Tag',
       users: 'Http/Socks users',
+      export: 'Export link',
+      exportUnsupported: 'This inbound does not support export',
+      exportMissingUser: 'Please configure at least one user',
+      exportMissingServer: 'Please provide the server address',
+      exportMissingPort: 'Please provide the listening port',
+      exportMissingPrivateKey: 'Reality private key is required',
       listen: {
         listen: 'Listen',
         listen_port: 'Port',

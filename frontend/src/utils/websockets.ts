@@ -1,6 +1,6 @@
 type WebSocketsOptions = {
   base?: string
-  bearer?: string
+  params?: Record<string, string>
   beforeConnect?: () => void
 }
 
@@ -8,30 +8,27 @@ type URLType = { name: string; url: string; cb: (data: any) => void; params?: Re
 
 export class WebSockets {
   public base: string
-  public bearer: string
+  public params: Record<string, string>
   public beforeConnect: () => void
 
   constructor(options: WebSocketsOptions) {
     this.base = options.base || ''
-    this.bearer = options.bearer || ''
+    this.params = options.params || {}
     this.beforeConnect = options.beforeConnect || (() => 0)
   }
 
-  public createWS(urls: URLType[]) {
-    this.beforeConnect()
+  private buildURL(url: string, params: Record<string, any>) {
+    const finalParams = new URLSearchParams({ ...this.params, ...params }).toString()
+    return this.base + url + (finalParams ? `?${finalParams}` : '')
+  }
 
+  public createWS(urls: URLType[]) {
     const wsMap: Record<string, { ready: boolean; close: () => void; open: () => void }> = {}
 
     urls.forEach(({ name, url, params = {}, cb }) => {
-      Object.assign(params, { token: this.bearer })
-
-      const query = new URLSearchParams(params).toString()
-
-      query && (url += '?' + query)
-
       const open = () => {
         if (!wsMap[name]!.ready) return
-        const ws = new WebSocket(this.base + url)
+        const ws = new WebSocket(this.buildURL(url, params))
         ws.onmessage = (e) => cb(JSON.parse(e.data))
         ws.onerror = () => (wsMap[name]!.ready = true)
         ws.onclose = () => (wsMap[name]!.ready = true)
@@ -46,7 +43,10 @@ export class WebSockets {
     })
 
     return {
-      connect: () => Object.values(wsMap).forEach((ws) => ws.open()),
+      connect: () => {
+        this.beforeConnect()
+        Object.values(wsMap).forEach((ws) => ws.open())
+      },
       disconnect: () => Object.values(wsMap).forEach((ws) => ws.close()),
     }
   }

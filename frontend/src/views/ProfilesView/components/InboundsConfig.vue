@@ -1,26 +1,65 @@
 <script lang="ts" setup>
+import { reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { ClipboardSetText, GetRealityPublicKey } from '@/bridge'
+import { ClipboardSetText, Exec, GetRealityPublicKey } from '@/bridge'
 import { DraggableOptions } from '@/constant/app'
-import { TunStackOptions } from '@/constant/kernel'
+import { CoreWorkingDirectory, TunStackOptions, ShadowsocksMethodOptions } from '@/constant/kernel'
 import {
   DefaultInboundMixed,
   DefaultInboundHttp,
   DefaultInboundSocks,
   DefaultInboundTun,
-  DefaultInboundVless,
-  DefaultInboundTrojan,
+  DefaultInboundShadowsocks,
+  DefaultInboundCustom,
 } from '@/constant/profile'
 import { Inbound } from '@/enums/kernel'
-import { message, picker, sampleID } from '@/utils'
+import { getKernelFileName, message, picker, sampleID } from '@/utils'
 
 const model = defineModel<IProfile['inbounds']>({ required: true })
 
 const { t } = useI18n()
+const shadowsocksGenerating = reactive<Record<string, boolean>>({})
 
 const handleDelete = (index: number) => {
   model.value.splice(index, 1)
+}
+
+const SHADOWSOCKS_2022_KEY_SIZES: Record<string, number> = {
+  '2022-blake3-aes-128-gcm': 16,
+  '2022-blake3-aes-256-gcm': 32,
+  '2022-blake3-chacha20-poly1305': 32,
+}
+
+const getShadowsocksKeyBytes = (method: string) => SHADOWSOCKS_2022_KEY_SIZES[method] || 32
+
+const fallbackBase64 = (bytes: number) => {
+  const array = new Uint8Array(bytes)
+  crypto.getRandomValues(array)
+  let binary = ''
+  array.forEach((b) => {
+    binary += String.fromCharCode(b)
+  })
+  return btoa(binary)
+}
+
+const runSingBoxRand = async (bytes: number) => {
+  const binary = `${CoreWorkingDirectory}/${getKernelFileName()}`
+  try {
+    const output = await Exec(binary, ['generate', 'rand', '--base64', String(bytes)])
+    const trimmed = output.trim()
+    if (trimmed) return trimmed
+    throw new Error('empty output')
+  } catch (error) {
+    console.error('[inbounds] failed to run sing-box generate rand', error)
+    message.error(t('kernel.inbounds.shadowsocks.generateFailed'))
+    return fallbackBase64(bytes)
+  }
+}
+
+const generateShadowsocksPassword = async (method: string) => {
+  const bytes = getShadowsocksKeyBytes(method)
+  return runSingBoxRand(bytes)
 }
 
 const inbounds = [
@@ -73,26 +112,28 @@ const inbounds = [
     },
   },
   {
-    label: 'VLESS Reality',
+    label: 'Shadowsocks',
     value: () => {
-      model.value.push({
+      const inbound: IInbound = {
         id: sampleID(),
-        tag: 'vless-reality-in',
-        type: Inbound.VLESS,
+        tag: 'ss-in',
+        type: Inbound.Shadowsocks,
         enable: true,
-        vless: DefaultInboundVless(),
-      })
+        shadowsocks: DefaultInboundShadowsocks(),
+      }
+      model.value.push(inbound)
+      refreshShadowsocksPassword(inbound)
     },
   },
   {
-    label: 'Trojan TLS',
+    label: 'Custom JSON',
     value: () => {
       model.value.push({
         id: sampleID(),
-        tag: 'trojan-tls-in',
-        type: Inbound.Trojan,
+        tag: 'custom-in',
+        type: Inbound.Custom,
         enable: true,
-        trojan: DefaultInboundTrojan(),
+        custom: DefaultInboundCustom(),
       })
     },
   },
@@ -208,6 +249,41 @@ const handleExport = async (inbound: IInbound) => {
   }
 }
 
+const refreshShadowsocksPassword = async (inbound: IInbound) => {
+  if (!inbound.shadowsocks) return
+  const key = inbound.id
+  shadowsocksGenerating[key] = true
+  try {
+    const password = await generateShadowsocksPassword(inbound.shadowsocks.method)
+    inbound.shadowsocks.password = password
+  } finally {
+    shadowsocksGenerating[key] = false
+  }
+}
+
+const handleShadowsocksMethodChange = async (inbound: IInbound, method: string) => {
+  if (!inbound.shadowsocks) return
+  inbound.shadowsocks.method = method
+  await refreshShadowsocksPassword(inbound)
+}
+
+const getCustomError = (inbound: IInbound) => {
+  if (inbound.type !== Inbound.Custom || !inbound.custom) return ''
+  const json = inbound.custom.content || ''
+  if (!json.trim()) {
+    return t('kernel.inbounds.custom.placeholder')
+  }
+  try {
+    const parsed = JSON.parse(json)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return t('kernel.inbounds.custom.mustObject')
+    }
+    return ''
+  } catch (error: any) {
+    return error?.message || String(error)
+  }
+}
+
 defineExpose({ handleAdd })
 </script>
 
@@ -240,129 +316,178 @@ defineExpose({ handleAdd })
         </div>
       </template>
       <div class="form-item">
-        {{ t('kernel.inbounds.enable') }}
-        <Switch v-model="inbound.enable" />
+        <span class="form-label">{{ t('kernel.inbounds.enable') }}</span>
+        <div class="form-value">
+          <Switch v-model="inbound.enable" />
+        </div>
       </div>
       <div class="form-item">
-        {{ t('kernel.inbounds.tag') }}
-        <Input v-model="inbound.tag" />
+        <span class="form-label">{{ t('kernel.inbounds.tag') }}</span>
+        <div class="form-value">
+          <Input v-model="inbound.tag" />
+        </div>
       </div>
-      <div v-if="inbound.type !== Inbound.Tun && inbound[inbound.type]">
+      <div
+        v-if="
+          inbound.type !== Inbound.Tun &&
+          inbound.type !== Inbound.Custom &&
+          inbound[inbound.type]
+        "
+      >
         <div class="form-item">
-          {{ t('kernel.inbounds.listen.listen') }}
-          <Input v-model="inbound[inbound.type]!.listen.listen" />
-        </div>
-        <div class="form-item">
-          {{ t('kernel.inbounds.listen.listen_port') }}
-          <Input v-model="inbound[inbound.type]!.listen.listen_port" type="number" />
-        </div>
-        <div :class="{ 'items-start': inbound[inbound.type]!.users.length }" class="form-item">
-          {{ t('kernel.inbounds.users') }}
-          <InputList
-            v-model="inbound[inbound.type]!.users"
-            :placeholder="
-              inbound.type === Inbound.VLESS
-                ? t('kernel.inbounds.vless.uuidPlaceholder')
-                : inbound.type === Inbound.Trojan
-                  ? t('kernel.inbounds.trojan.passwordPlaceholder')
-                  : 'user:password'
-            "
-          />
+          <span class="form-label">{{ t('kernel.inbounds.listen.listen') }}</span>
+          <div class="form-value">
+            <Input v-model="inbound[inbound.type]!.listen.listen" />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.listen.tcp_fast_open') }}
-          <Switch v-model="inbound[inbound.type]!.listen.tcp_fast_open" />
+          <span class="form-label">{{ t('kernel.inbounds.listen.listen_port') }}</span>
+          <div class="form-value">
+            <Input v-model="inbound[inbound.type]!.listen.listen_port" type="number" />
+          </div>
+        </div>
+        <div
+          v-if="inbound.type === Inbound.Mixed || inbound.type === Inbound.Http || inbound.type === Inbound.Socks"
+          :class="{ 'items-start': inbound[inbound.type]!.users.length }"
+          class="form-item"
+        >
+          <span class="form-label">{{ t('kernel.inbounds.users') }}</span>
+          <div class="form-value">
+            <InputList
+              v-model="inbound[inbound.type]!.users"
+              :placeholder="t('kernel.inbounds.usersPlaceholder')"
+            />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.listen.tcp_multi_path') }}
-          <Switch v-model="inbound[inbound.type]!.listen.tcp_multi_path" />
+          <span class="form-label">{{ t('kernel.inbounds.listen.tcp_fast_open') }}</span>
+          <div class="form-value">
+            <Switch v-model="inbound[inbound.type]!.listen.tcp_fast_open" />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.listen.udp_fragment') }}
-          <Switch v-model="inbound[inbound.type]!.listen.udp_fragment" />
+          <span class="form-label">{{ t('kernel.inbounds.listen.tcp_multi_path') }}</span>
+          <div class="form-value">
+            <Switch v-model="inbound[inbound.type]!.listen.tcp_multi_path" />
+          </div>
         </div>
-        <template v-if="inbound.type === Inbound.VLESS && inbound.vless">
+        <div class="form-item">
+          <span class="form-label">{{ t('kernel.inbounds.listen.udp_fragment') }}</span>
+          <div class="form-value">
+            <Switch v-model="inbound[inbound.type]!.listen.udp_fragment" />
+          </div>
+        </div>
+        <template v-if="inbound.type === Inbound.Shadowsocks && inbound.shadowsocks">
           <div class="form-item">
-            {{ t('kernel.inbounds.vless.serverName') }}
-            <Input v-model="inbound.vless.tls.server_name" />
-          </div>
-          <div class="form-item">
-            {{ t('kernel.inbounds.vless.handshakeServer') }}
-            <Input v-model="inbound.vless.tls.reality.handshake.server" />
-          </div>
-          <div class="form-item">
-            {{ t('kernel.inbounds.vless.handshakePort') }}
-            <Input v-model="inbound.vless.tls.reality.handshake.server_port" type="number" />
-          </div>
-          <div class="form-item">
-            {{ t('kernel.inbounds.vless.privateKey') }}
-            <Input v-model="inbound.vless.tls.reality.private_key" editable />
-          </div>
-          <div :class="{ 'items-start': inbound.vless.tls.reality.short_id.length }" class="form-item">
-            {{ t('kernel.inbounds.vless.shortId') }}
-            <InputList v-model="inbound.vless.tls.reality.short_id" placeholder="short id" />
-          </div>
-        </template>
-        <template v-else-if="inbound.type === Inbound.Trojan && inbound.trojan">
-          <div class="form-item">
-            {{ t('kernel.inbounds.trojan.serverName') }}
-            <Input v-model="inbound.trojan.tls.server_name" />
-          </div>
-          <div :class="{ 'items-start': inbound.trojan.tls.alpn.length }" class="form-item">
-            {{ t('kernel.inbounds.trojan.alpn') }}
-            <InputList v-model="inbound.trojan.tls.alpn" placeholder="h2" />
+            <span class="form-label">{{ t('kernel.inbounds.shadowsocks.method') }}</span>
+            <div class="form-value">
+              <Select
+                v-model="inbound.shadowsocks.method"
+                :options="ShadowsocksMethodOptions"
+                :border="false"
+                auto-size
+                @change="(value) => handleShadowsocksMethodChange(inbound, value as string)"
+              />
+            </div>
           </div>
           <div class="form-item">
-            {{ t('kernel.inbounds.trojan.minVersion') }}
-            <Input v-model="inbound.trojan.tls.min_version" />
-          </div>
-          <div class="form-item">
-            {{ t('kernel.inbounds.trojan.maxVersion') }}
-            <Input v-model="inbound.trojan.tls.max_version" />
+            <span class="form-label">{{ t('kernel.inbounds.shadowsocks.password') }}</span>
+            <div class="form-value flex items-center gap-4 flex-wrap justify-end">
+              <Input v-model="inbound.shadowsocks.password" type="text" class="ss-password-input" />
+              <Button
+                icon="refresh"
+                type="text"
+                size="small"
+                :loading="shadowsocksGenerating[inbound.id]"
+                :disabled="shadowsocksGenerating[inbound.id]"
+                @click="() => refreshShadowsocksPassword(inbound)"
+                v-tips="t('common.refresh')"
+              />
+            </div>
           </div>
         </template>
       </div>
       <div v-else-if="inbound.type === Inbound.Tun && inbound.tun">
         <div class="form-item">
-          {{ t('kernel.inbounds.tun.interface_name') }}
-          <Input v-model="inbound.tun.interface_name" editable />
+          <span class="form-label">{{ t('kernel.inbounds.tun.interface_name') }}</span>
+          <div class="form-value">
+            <Input v-model="inbound.tun.interface_name" editable />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.tun.stack') }}
-          <Radio v-model="inbound.tun.stack" :options="TunStackOptions" />
+          <span class="form-label">{{ t('kernel.inbounds.tun.stack') }}</span>
+          <div class="form-value">
+            <Radio v-model="inbound.tun.stack" :options="TunStackOptions" />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.tun.auto_route') }}
-          <Switch v-model="inbound.tun.auto_route" />
+          <span class="form-label">{{ t('kernel.inbounds.tun.auto_route') }}</span>
+          <div class="form-value">
+            <Switch v-model="inbound.tun.auto_route" />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.tun.strict_route') }}
-          <Switch v-model="inbound.tun.strict_route" />
+          <span class="form-label">{{ t('kernel.inbounds.tun.strict_route') }}</span>
+          <div class="form-value">
+            <Switch v-model="inbound.tun.strict_route" />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.tun.endpoint_independent_nat') }}
-          <Switch v-model="inbound.tun.endpoint_independent_nat" />
+          <span class="form-label">{{ t('kernel.inbounds.tun.endpoint_independent_nat') }}</span>
+          <div class="form-value">
+            <Switch v-model="inbound.tun.endpoint_independent_nat" />
+          </div>
         </div>
         <div class="form-item">
-          {{ t('kernel.inbounds.tun.mtu') }}
-          <Input v-model="inbound.tun.mtu" type="number" editable />
+          <span class="form-label">{{ t('kernel.inbounds.tun.mtu') }}</span>
+          <div class="form-value">
+            <Input v-model="inbound.tun.mtu" type="number" editable />
+          </div>
         </div>
         <div :class="{ 'items-start': inbound.tun.address.length }" class="form-item">
-          {{ t('kernel.inbounds.tun.address') }}
-          <InputList v-model="inbound.tun.address" />
+          <span class="form-label">{{ t('kernel.inbounds.tun.address') }}</span>
+          <div class="form-value">
+            <InputList v-model="inbound.tun.address" />
+          </div>
         </div>
         <div :class="{ 'items-start': inbound.tun.route_address.length }" class="form-item">
-          {{ t('kernel.inbounds.tun.route_address') }}
-          <InputList v-model="inbound.tun.route_address" placeholder="0.0.0.0/1 ::1" />
+          <span class="form-label">{{ t('kernel.inbounds.tun.route_address') }}</span>
+          <div class="form-value">
+            <InputList v-model="inbound.tun.route_address" placeholder="0.0.0.0/1 ::1" />
+          </div>
         </div>
         <div :class="{ 'items-start': inbound.tun.route_exclude_address.length }" class="form-item">
-          {{ t('kernel.inbounds.tun.route_exclude_address') }}
-          <InputList
-            v-model="inbound.tun.route_exclude_address"
-            placeholder="192.168.0.0/16 fc00::/7"
+          <span class="form-label">{{ t('kernel.inbounds.tun.route_exclude_address') }}</span>
+          <div class="form-value">
+            <InputList
+              v-model="inbound.tun.route_exclude_address"
+              placeholder="192.168.0.0/16 fc00::/7"
+            />
+          </div>
+        </div>
+      </div>
+      <div v-else-if="inbound.type === Inbound.Custom && inbound.custom">
+        <div class="form-item flex-col items-start w-full">
+          <div class="w-full mb-4">{{ t('kernel.inbounds.custom.label') }}</div>
+          <Input
+            v-model="inbound.custom.content"
+            class="w-full"
+            type="code"
+            lang="json"
+            editable
+            :placeholder="t('kernel.inbounds.custom.placeholder')"
           />
+          <p v-if="getCustomError(inbound)" class="text-error text-sm mt-2">
+            {{ getCustomError(inbound) }}
+          </p>
         </div>
       </div>
     </Card>
   </div>
 </template>
+
+<style scoped>
+.ss-password-input {
+  max-width: 320px;
+}
+</style>

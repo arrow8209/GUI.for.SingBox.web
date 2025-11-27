@@ -21,6 +21,8 @@ export enum Inbound {
   Tun = 'tun',
   VLESS = 'vless',
   Trojan = 'trojan',
+  Shadowsocks = 'shadowsocks',
+  Custom = 'custom',
 }
 
 export enum Outbound {

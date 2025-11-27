@@ -118,43 +118,27 @@ export const restoreProfile = (config: Recordable) => {
             },
           }
         }
-        if (inbound.type === Inbound.VLESS) {
+        if (inbound.type === Inbound.Shadowsocks) {
           return {
             ...extra,
-            vless: {
+            shadowsocks: {
               listen: restoreListen(inbound),
-              users: (inbound.users || []).map((user: any) => user.uuid || '').filter(Boolean),
-              tls: {
-                enabled: inbound.tls?.enabled ?? true,
-                server_name: inbound.tls?.server_name || '',
-                reality: {
-                  enabled: inbound.tls?.reality?.enabled ?? true,
-                  handshake: {
-                    server: inbound.tls?.reality?.handshake?.server || '',
-                    server_port: inbound.tls?.reality?.handshake?.server_port || 443,
-                  },
-                  private_key: inbound.tls?.reality?.private_key || '',
-                  short_id: inbound.tls?.reality?.short_id || [],
-                },
-              },
+              method: inbound.method || 'aes-256-gcm',
+              password: inbound.password || '',
+              users: (inbound.users || []).map((user: any) => ({
+                method: user.method || inbound.method || 'aes-256-gcm',
+                password: user.password || '',
+              })),
             },
           }
         }
-        if (inbound.type === Inbound.Trojan) {
-          return {
-            ...extra,
-            trojan: {
-              listen: restoreListen(inbound),
-              users: (inbound.users || []).map((user: any) => user.password || '').filter(Boolean),
-              tls: {
-                enabled: inbound.tls?.enabled ?? true,
-                server_name: inbound.tls?.server_name || '',
-                alpn: inbound.tls?.alpn || ['h2', 'http/1.1'],
-                min_version: inbound.tls?.min_version || '1.3',
-                max_version: inbound.tls?.max_version || '1.3',
-              },
-            },
-          }
+        const customContent = JSON.stringify(inbound, null, 2)
+        return {
+          ...extra,
+          type: Inbound.Custom,
+          custom: {
+            content: customContent,
+          },
         }
       })
     } else if (field === 'outbounds') {

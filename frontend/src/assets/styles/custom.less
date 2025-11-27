@@ -68,6 +68,33 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+
+  .form-label {
+    flex: 1;
+    text-align: left;
+  }
+
+  .form-value {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .form-value :deep(.gui-input),
+  .form-value :deep(.gui-select),
+  .form-value :deep(.gui-multiple-select),
+  .form-value :deep(.gui-input-list) {
+    min-width: 200px;
+    max-width: 360px;
+  }
+
+  .form-value :deep(.gui-switch),
+  .form-value :deep(.gui-radio),
+  .form-value :deep(.gui-button) {
+    margin-left: auto;
+  }
 }
 
 .form-action {

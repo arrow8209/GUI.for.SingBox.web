@@ -219,7 +219,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     const patchInboundAddress = (allowLan: boolean) => {
       if (!runtimeProfile) return
       runtimeProfile.inbounds.forEach((inbound) => {
-        if (inbound.type === Inbound.Tun) return
+        if (inbound.type === Inbound.Tun || inbound.type === Inbound.Custom) return
         inbound[inbound.type]!.listen.listen = allowLan ? '0.0.0.0' : '127.0.0.1'
       })
     }

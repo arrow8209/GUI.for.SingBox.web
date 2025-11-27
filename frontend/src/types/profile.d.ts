@@ -51,7 +51,7 @@ interface IRuleSet {
   format: RuleSetFormat
 }
 
-type InboundType = 'mixed' | 'socks' | 'http' | 'tun' | 'vless' | 'trojan'
+type InboundType = 'mixed' | 'socks' | 'http' | 'tun' | 'vless' | 'trojan' | 'shadowsocks' | 'custom'
 type InboundListen = {
   listen: string
   listen_port: number
@@ -115,6 +115,18 @@ interface IInbound {
       min_version: string
       max_version: string
     }
+  }
+  shadowsocks?: {
+    listen: InboundListen
+    method: string
+    password: string
+    users: {
+      method: string
+      password: string
+    }[]
+  }
+  custom?: {
+    content: string
   }
 }
 

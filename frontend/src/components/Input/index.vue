@@ -19,6 +19,7 @@ export interface Props {
   disabled?: boolean
   border?: boolean
   delay?: number
+  readonly?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -33,6 +34,7 @@ const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   border: true,
   delay: 0,
+  readonly: false,
 })
 
 const emits = defineEmits(['change', 'update:modelValue', 'submit'])
@@ -141,6 +143,7 @@ defineExpose({
         :placeholder="placeholder"
         :type="type"
         :disabled="disabled"
+        :readonly="readonly"
         @input="onInput"
         @blur="onSubmit"
         @keydown.enter="inputRef?.blur"

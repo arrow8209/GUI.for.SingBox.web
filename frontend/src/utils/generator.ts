@@ -147,6 +147,40 @@ const generateInbounds = (inbounds: IInbound[]) => {
       }
     }
 
+    if (inbound.type === Inbound.Shadowsocks && inbound.shadowsocks) {
+      const details = inbound.shadowsocks
+      const users =
+        details.users.length > 0
+          ? details.users.map((user) => ({
+              method: user.method || details.method,
+              password: user.password,
+            }))
+          : undefined
+      return {
+        type: 'shadowsocks',
+        tag: inbound.tag,
+        ...normalizeListen(details.listen),
+        method: details.method,
+        password: details.password,
+        users,
+      }
+    }
+
+    if (inbound.type === Inbound.Custom && inbound.custom) {
+      try {
+        const parsed = JSON.parse(inbound.custom.content || '{}')
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Invalid inbound payload')
+        }
+        if (!parsed.tag) {
+          parsed.tag = inbound.tag
+        }
+        return parsed
+      } catch (error: any) {
+        throw new Error(`Custom inbound "${inbound.tag}" JSON error: ${error?.message || error}`)
+      }
+    }
+
     return []
   })
 }

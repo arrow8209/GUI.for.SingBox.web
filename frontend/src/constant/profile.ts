@@ -30,6 +30,8 @@ const DefaultOutboundIds = {
 const DefaultInboundIds = {
   MixedIn: 'mixed-in',
   Tun: 'tun-in',
+  Shadowsocks: 'shadowsocks-in',
+  Custom: 'custom-in',
 }
 
 const DefaultRulesetIds = {
@@ -110,6 +112,19 @@ export const DefaultInboundMixed = (): IInbound['mixed'] => ({
   users: [],
 })
 
+export const DefaultInboundShadowsocks = (): IInbound['shadowsocks'] => ({
+  listen: {
+    listen: '127.0.0.1',
+    listen_port: 60080,
+    tcp_fast_open: false,
+    tcp_multi_path: false,
+    udp_fragment: false,
+  },
+  method: 'aes-256-gcm',
+  password: '',
+  users: [],
+})
+
 export const DefaultInboundVless = (): IInbound['vless'] => ({
   listen: {
     listen: '127.0.0.1',
@@ -162,6 +177,15 @@ export const DefaultInboundTun = (): IInbound['tun'] => ({
   route_exclude_address: [],
   endpoint_independent_nat: false,
   stack: TunStack.Mixed,
+})
+
+export const DefaultInboundCustom = (): IInbound['custom'] => ({
+  content: `{
+  "type": "shadowsocks",
+  "tag": "custom-in",
+  "listen": "0.0.0.0",
+  "listen_port": 60080
+}`,
 })
 
 export const DefaultInbounds = (): IInbound[] => [

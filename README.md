@@ -44,8 +44,8 @@ pnpm install
 pnpm build
 
 cd ..
-go build -o gui-singbox
-./gui-singbox
+go build -o sing-box.web
+./sing-box.web
 ```
 
 By default the server listens on `:22345`. Set `PORT=8080` or `SERVER_ADDR=127.0.0.1:8080` before running to customize.

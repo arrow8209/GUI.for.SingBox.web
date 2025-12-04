@@ -131,7 +131,7 @@ defineExpose({
       <CodeViewer
         v-if="type === 'code'"
         @change="(value: string) => onInput({ target: { value } })"
-        :value="modelValue"
+        :model-value="(modelValue ?? '') + ''"
         :lang="lang"
         :editable="!disabled"
         :placeholder="placeholder"

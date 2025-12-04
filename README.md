@@ -18,6 +18,14 @@ Take a look at the live version here: 👉 <a href="https://gui-for-cores.github
 
 [Community](https://gui-for-cores.github.io/guide/gfs/community)
 
+## Test
+
+```
+go run .
+cd frontend/
+VITE_API_BASE=http://127.0.0.1:22345/api pnpm dev -- --host
+```
+
 ## Build
 
 1、Build Environment

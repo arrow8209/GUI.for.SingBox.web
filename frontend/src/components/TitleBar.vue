@@ -12,7 +12,7 @@ import {
   RestartApp,
 } from '@/bridge'
 import { useAppSettingsStore, useKernelApiStore, useEnvStore, useAppStore } from '@/stores'
-import { APP_TITLE, APP_VERSION, debounce, exitApp } from '@/utils'
+import { APP_TITLE, APP_VERSION, APP_GIT_HASH, debounce, exitApp } from '@/utils'
 
 import type { Menu } from '@/types/app'
 
@@ -79,6 +79,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
       class="font-bold w-full h-full flex items-center"
     >
       {{ APP_TITLE }} {{ APP_VERSION }}
+      <span v-if="APP_GIT_HASH"> ({{ APP_GIT_HASH }})</span>
       <CustomAction :actions="appStore.customActions.title_bar" />
       <Icon
         v-if="kernelApiStore.starting || kernelApiStore.stopping || kernelApiStore.restarting"

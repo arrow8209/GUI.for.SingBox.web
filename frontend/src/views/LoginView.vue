@@ -11,6 +11,7 @@ const form = reactive({
   password: '',
 })
 
+// 在密码输入框中按下回车时也会调用该函数，方便快速登录
 const handleSubmit = async () => {
   if (!form.username || !form.password) {
     message.warn('请输入用户名和密码')
@@ -34,7 +35,12 @@ const handleSubmit = async () => {
       </div>
       <div class="form-item">
         <label>密码</label>
-        <Input v-model="form.password" placeholder="密码" type="password" />
+        <Input
+          v-model="form.password"
+          placeholder="密码"
+          type="password"
+          @submit="handleSubmit"
+        />
       </div>
       <Button type="primary" :loading="authStore.loading" @click="handleSubmit" block>
         登录

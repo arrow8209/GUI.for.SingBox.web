@@ -15,7 +15,7 @@ async function request<T>(path: string, options: RequestOptions = {}) {
     method: options.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
-      ...(options.headers || {}),
+      ...options.headers,
     },
   }
 

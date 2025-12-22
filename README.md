@@ -54,7 +54,7 @@ By default the server listens on `:22345`. Set `PORT=8080` or `SERVER_ADDR=127.0
 
 打包/发布时请至少拷贝以下文件与目录：
 
-1. `gui-singbox`（或对应平台的可执行文件）：Go 服务器二进制，内嵌了前端静态资源。
+1. `sing-box.web`（或对应平台的可执行文件）：Go 服务器二进制，内嵌了前端静态资源。
 2. `data/` 目录及其所有子内容：
    - `data/sing-box/`：sing-box 内核可执行文件与配置（`config.json`、`pid.txt` 等）。
    - `data/.cache/`：内核下载缓存、进程信息、插件/规则集缓存等运行期必需的临时文件。

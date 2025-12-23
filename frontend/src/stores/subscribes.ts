@@ -24,6 +24,14 @@ import type { Subscription } from '@/types/app'
 export const useSubscribesStore = defineStore('subscribes', () => {
   const subscribes = ref<Subscription[]>([])
 
+  const formatSubscribeError = (error: any) => {
+    const message = error?.message || String(error || '')
+    if (message.includes('x509: certificate relies on legacy Common Name field')) {
+      return 'TLS verification failed (legacy CN only). Enable "Skip TLS verification" in the subscription settings.'
+    }
+    return message || 'Request failed'
+  }
+
   const setupSubscribes = async () => {
     const data = await ignoredError(ReadFile, SubscribesFilePath)
     data && (subscribes.value = parse(data))
@@ -252,8 +260,9 @@ export const useSubscribesStore = defineStore('subscribes', () => {
       await _doUpdateSub(s)
       await saveSubscribes()
     } catch (error) {
-      console.error('updateSubscribe: ', s.name, error)
-      throw error
+      const message = formatSubscribeError(error)
+      console.error('updateSubscribe: ', s.name, message)
+      throw message
     } finally {
       s.updating = false
     }

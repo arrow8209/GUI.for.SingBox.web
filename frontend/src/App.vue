@@ -44,10 +44,25 @@ const bootstrap = async () => {
   if (bootstrapped.value) return
   loading.value = true
   hasError.value = false
-  await envStore.setupEnv()
   const showError = (err: string) => {
     hasError.value = true
     message.error(err)
+  }
+  try {
+    await envStore.setupEnv()
+  } catch (error: any) {
+    if (!authStore.isAuthenticated) {
+      loading.value = false
+      return
+    }
+    showError(error?.message || error)
+    loading.value = false
+    return
+  }
+  // If token expired, forceLogout will flip auth state; stop bootstrap to avoid noisy errors.
+  if (!authStore.isAuthenticated) {
+    loading.value = false
+    return
   }
 
   await Promise.all([

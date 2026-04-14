@@ -53,4 +53,5 @@ export type EnvResult = {
   basePath: string
   os: string
   arch: string
+  isPrivileged?: boolean
 }

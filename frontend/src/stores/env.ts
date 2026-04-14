@@ -16,6 +16,7 @@ export const useEnvStore = defineStore('env', () => {
     appPath: '',
     os: '',
     arch: '',
+    isPrivileged: false,
   })
 
   const systemProxy = ref(false)
@@ -25,6 +26,7 @@ export const useEnvStore = defineStore('env', () => {
     const appPath = `${_env.basePath}/${_env.appName}`
     env.value = {
       ..._env,
+      isPrivileged: _env.isPrivileged ?? false,
       appPath: _env.os === 'windows' ? appPath.replaceAll('/', '\\') : appPath,
     }
   }

@@ -5,11 +5,13 @@ import {
   getProxies,
   getConfigs,
   setConfigs,
-  Api,
-  resolveCoreConnection,
-  getCoreProxyBase,
+  onLogs,
+  onMemory,
+  onConnections,
+  onTraffic,
+  initWebsocket,
+  destroyWebsocket,
 } from '@/api/kernel'
-import { WebSockets } from '@/api/websocket'
 import { ProcessInfo, KillProcess, ExecBackground, ReadFile, WriteFile, RemoveFile } from '@/bridge'
 import {
   CoreConfigFilePath,
@@ -30,7 +32,6 @@ import {
   useSubscribesStore,
   useRulesetsStore,
 } from '@/stores'
-import { useAuthStore } from '@/stores/auth'
 import {
   generateConfigFile,
   updateTrayAndMenus,
@@ -41,35 +42,12 @@ import {
   getKernelRuntimeArgs,
   getKernelRuntimeEnv,
   eventBus,
-  setIntervalImmediately,
 } from '@/utils'
 
-import type {
-  CoreApiConfig,
-  CoreApiProxy,
-  CoreApiLogsData,
-  CoreApiMemoryData,
-  CoreApiTrafficData,
-  CoreApiConnectionsData,
-} from '@/types/kernel'
+import type { CoreApiConfig, CoreApiProxy } from '@/types/kernel'
 
 export type ProxyType = 'mixed' | 'http' | 'socks'
 
-const resolveCoreProxyWSBase = () => {
-  const httpBase = getCoreProxyBase()
-  try {
-    if (httpBase.startsWith('http')) {
-      const url = new URL(httpBase, window.location.origin)
-      const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-      return `${protocol}//${url.host}${url.pathname}`
-    }
-  } catch (error) {
-    console.error('[kernelApi] failed to resolve core proxy base, fallback to relative ws path', error)
-  }
-  const normalized = httpBase.startsWith('/') ? httpBase : '/' + httpBase
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}${normalized}`
-}
 
 export const useKernelApiStore = defineStore('kernelApi', () => {
   const envStore = useEnvStore()
@@ -79,7 +57,6 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
   const subscribesStore = useSubscribesStore()
   const rulesetsStore = useRulesetsStore()
   const appSettingsStore = useAppSettingsStore()
-  const authStore = useAuthStore()
 
   /** RESTful API */
   const config = ref<CoreApiConfig>({
@@ -287,130 +264,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     proxies.value = b
   }
 
-  /* WebSocket */
-  let websocketInstance: WebSockets | null
-  const longLivedWS = {
-    setup: undefined as (() => void) | undefined,
-    cleanup: undefined as (() => void) | undefined,
-    timer: -1,
-  }
-  const shortLivedWS = {
-    setup: undefined as (() => void) | undefined,
-    cleanup: undefined as (() => void) | undefined,
-    timer: -1,
-  }
-  const onLogsEvents = {
-    onFirst: undefined as (() => void) | undefined,
-    onEmpty: undefined as (() => void) | undefined,
-  }
 
-  const websocketHandlers = {
-    logs: [] as ((data: CoreApiLogsData) => void)[],
-    memory: [] as ((data: CoreApiMemoryData) => void)[],
-    traffic: [] as ((data: CoreApiTrafficData) => void)[],
-    connections: [] as ((data: CoreApiConnectionsData) => void)[],
-  } as const
-
-  const createCoreWSHandlerRegister = <S extends C[], C>(
-    source: S,
-    events: { onFirst?: () => void; onEmpty?: () => void } = {},
-  ) => {
-    const register = (cb: S[number]) => {
-      source.push(cb)
-      source.length === 1 && events.onFirst?.()
-      const unregister = () => {
-        const idx = source.indexOf(cb)
-        idx !== -1 && source.splice(idx, 1)
-        source.length === 0 && events.onEmpty?.()
-      }
-      return unregister
-    }
-    return register
-  }
-
-  const createCoreWSDispatcher = <T>(source: ((data: T) => void)[]) => {
-    return (data: T) => {
-      source.forEach((cb) => cb(data))
-    }
-  }
-
-  const onLogs = createCoreWSHandlerRegister(websocketHandlers.logs, onLogsEvents)
-  const onMemory = createCoreWSHandlerRegister(websocketHandlers.memory)
-  const onTraffic = createCoreWSHandlerRegister(websocketHandlers.traffic)
-  const onConnections = createCoreWSHandlerRegister(websocketHandlers.connections)
-
-  const initCoreWebsockets = () => {
-    websocketInstance = new WebSockets({
-      beforeConnect() {
-        const { coreBase, coreBearer } = resolveCoreConnection()
-        this.base = resolveCoreProxyWSBase()
-        const params: Record<string, string> = { coreBase }
-        if (coreBearer) {
-          params.coreBearer = coreBearer
-        }
-        if (authStore.token) {
-          params.token = authStore.token
-        }
-        this.params = params
-      },
-    })
-
-    const { connect: connectLongLived, disconnect: disconnectLongLived } =
-      websocketInstance.createWS([
-        {
-          name: 'Memory',
-          url: Api.Memory,
-          cb: createCoreWSDispatcher(websocketHandlers.memory),
-        },
-        {
-          name: 'Traffic',
-          url: Api.Traffic,
-          cb: createCoreWSDispatcher(websocketHandlers.traffic),
-        },
-        {
-          name: 'Connections',
-          url: Api.Connections,
-          cb: createCoreWSDispatcher(websocketHandlers.connections),
-        },
-      ])
-
-    const { connect: connectShortLived, disconnect: disconnectShortLived } =
-      websocketInstance.createWS([
-        {
-          name: 'Logs',
-          url: Api.Logs,
-          params: { level: 'debug' },
-          cb: createCoreWSDispatcher(websocketHandlers.logs),
-        },
-      ])
-
-    longLivedWS.setup = () => {
-      longLivedWS.timer = setIntervalImmediately(connectLongLived, 3_000)
-    }
-    longLivedWS.cleanup = () => {
-      clearInterval(longLivedWS.timer)
-      disconnectLongLived()
-      longLivedWS.cleanup = undefined
-    }
-
-    shortLivedWS.setup = () => {
-      shortLivedWS.timer = setIntervalImmediately(connectShortLived, 3_000)
-    }
-    shortLivedWS.cleanup = () => {
-      clearInterval(shortLivedWS.timer)
-      disconnectShortLived()
-      shortLivedWS.cleanup = undefined
-    }
-
-    onLogsEvents.onFirst = shortLivedWS.setup
-    onLogsEvents.onEmpty = shortLivedWS.cleanup
-  }
-
-  const destroyCoreWebsockets = () => {
-    longLivedWS.cleanup?.()
-    shortLivedWS.cleanup?.()
-    websocketInstance = null
-  }
 
   /* Bridge API */
   const corePid = ref(-1)
@@ -457,7 +311,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     coreStateLoading.value = false
 
     if (running.value) {
-      initCoreWebsockets()
+      initWebsocket()
       await Promise.all([refreshConfig(), refreshProviderProxies()])
       await envStore.updateSystemProxyStatus()
     } else if (appSettingsStore.app.autoStartKernel) {
@@ -498,7 +352,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     isCoreStartedByThisInstance = true
     coreStoppedPromise = new Promise((r) => (coreStoppedResolver = r))
 
-    initCoreWebsockets()
+    initWebsocket()
     await Promise.all([refreshConfig(), refreshProviderProxies()])
 
     if (appSettingsStore.app.autoSetSystemProxy) {
@@ -518,7 +372,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     running.value = false
     needRestart.value = false
 
-    destroyCoreWebsockets()
+    destroyWebsocket()
 
     if (appSettingsStore.app.autoSetSystemProxy) {
       await envStore.clearSystemProxy()

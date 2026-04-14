@@ -2,12 +2,9 @@
 import { ref, watch } from 'vue'
 
 import { IsStartup } from '@/bridge'
-import { NavigationBar, TitleBar } from '@/components'
+import { NavigationBar, TitleBar, SplashView, AboutView, CommandView } from '@/components'
 import * as Stores from '@/stores'
 import { sleep, message } from '@/utils'
-import AboutView from '@/views/AboutView.vue'
-import CommandView from '@/views/CommandView.vue'
-import SplashView from '@/views/SplashView.vue'
 
 const loading = ref(true)
 const percent = ref(0)

@@ -1,6 +1,7 @@
 import {
   Color,
   ControllerCloseMode,
+  Lang,
   PluginTrigger,
   RequestMethod,
   ScheduledTasksType,
@@ -51,6 +52,11 @@ export const Colors = {
     secondary: '#000',
   },
 }
+
+export const LanguageOptions = [
+  { label: 'settings.lang.zh', value: Lang.ZH },
+  { label: 'settings.lang.en', value: Lang.EN },
+]
 
 export const ViewOptions = [
   { label: 'common.grid', value: View.Grid },
@@ -124,6 +130,7 @@ export const DraggableOptions = {
 export const PluginsTriggerOptions = [
   { label: 'plugin.on::startup', value: PluginTrigger.OnStartup },
   { label: 'plugin.on::ready', value: PluginTrigger.OnReady },
+  { label: 'plugin.on::reload', value: PluginTrigger.OnReload },
   { label: 'plugin.on::shutdown', value: PluginTrigger.OnShutdown },
   { label: 'plugin.on::manual', value: PluginTrigger.OnManual },
   { label: 'plugin.on::generate', value: PluginTrigger.OnGenerate },

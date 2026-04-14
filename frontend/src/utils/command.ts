@@ -1,4 +1,4 @@
-import { ExitApp, RestartApp, WindowReloadApp } from '@/bridge'
+import { RestartApp } from '@/bridge'
 import { ColorOptions, ThemeOptions } from '@/constant/app'
 import { ModeOptions } from '@/constant/kernel'
 import { PluginTrigger, PluginTriggerEvent } from '@/enums/app'
@@ -12,7 +12,7 @@ import {
   useRulesetsStore,
   useSubscribesStore,
 } from '@/stores'
-import { handleChangeMode, message } from '@/utils'
+import { exitApp, handleChangeMode, message, reloadApp } from '@/utils'
 
 type Command = {
   label: string
@@ -129,11 +129,11 @@ export const getCommands = () => {
               label: 'settings.lang.load',
               cmd: 'Load language files',
               handler: async () => {
-                await appSettings.loadLocales()
+                await appStore.loadLocales()
                 message.success('common.success')
               },
             },
-            ...appSettings.locales.map((v) => ({
+            ...appStore.locales.map((v) => ({
               label: v.label,
               cmd: v.value,
               handler: () => (appSettings.app.lang = v.value),
@@ -161,7 +161,7 @@ export const getCommands = () => {
         {
           label: 'titlebar.reload',
           cmd: 'Reload Window',
-          handler: WindowReloadApp,
+          handler: reloadApp,
         },
         {
           label: 'tray.restartTip',
@@ -171,7 +171,7 @@ export const getCommands = () => {
         {
           label: 'tray.exitTip',
           cmd: 'Exit APP',
-          handler: ExitApp,
+          handler: exitApp,
         },
         {
           label: 'router.about',
@@ -213,7 +213,6 @@ export const getCommands = () => {
         },
       ],
     },
-
     {
       label: 'tray.plugins',
       cmd: 'Plugins',

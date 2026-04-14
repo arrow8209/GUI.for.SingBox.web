@@ -21,15 +21,28 @@ export default defineConfig({
   base: './',
   plugins: [vue()],
   resolve: {
+    extensions: ['.ts', '.js'],
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       vue: 'vue/dist/vue.esm-bundler.js',
     },
   },
   build: {
-    assetsInlineLimit: 100 * 1024, // 100KB
+    cssCodeSplit: false,
     chunkSizeWarningLimit: 4096, // 4MB
-    // __ROLLUP_MANUAL_CHUNKS__
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'vue', test: /node_modules\/vue/ },
+            { name: 'codemirror', test: /node_modules\/@codemirror/ },
+            { name: 'prettier', test: /node_modules\/prettier/ },
+            { name: 'vendor', test: /node_modules/ },
+            { name: 'index' },
+          ],
+        },
+      },
+    },
   },
   define: {
     // expose git hash as a "virtual" env variable

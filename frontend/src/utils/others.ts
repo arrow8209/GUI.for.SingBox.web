@@ -1,6 +1,6 @@
 import { stringify } from 'yaml'
 
-import { useAppSettingsStore, useEnvStore } from '@/stores'
+import { useAppSettingsStore } from '@/stores'
 import { APP_TITLE } from '@/utils'
 
 export const deepClone = <T>(json: T): T => JSON.parse(JSON.stringify(json))
@@ -189,9 +189,7 @@ export const getGitHubApiAuthorization = () => {
 }
 
 // System ScheduledTask Helper
-export const getTaskSchXmlString = async (delay = 30) => {
-  const { appPath } = useEnvStore().env
-
+export const getTaskSchXmlString = (appPath: string, delay = 30) => {
   const xml = /*xml*/ `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -237,7 +235,6 @@ export const getTaskSchXmlString = async (delay = 30) => {
   </Actions>
 </Task>
 `
-
   return xml
 }
 
@@ -339,6 +336,16 @@ export const base64Decode = (input: string): string => {
 export const stringifyNoFolding = (content: any) => {
   // Disable string folding
   return stringify(content, { lineWidth: 0, minContentWidth: 0 })
+}
+
+export const createTextMatcher = (include: string, exclude: string) => {
+  const includeRegex = include ? buildSmartRegExp(include) : null
+  const excludeRegex = exclude ? buildSmartRegExp(exclude) : null
+  return (text: string) => {
+    const flag1 = includeRegex ? includeRegex.test(text) : true
+    const flag2 = excludeRegex ? excludeRegex.test(text) : false
+    return flag1 && !flag2
+  }
 }
 
 const regexCache = new Map<string, RegExp>()

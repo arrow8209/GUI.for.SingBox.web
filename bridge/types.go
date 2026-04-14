@@ -57,6 +57,10 @@ type FlagResult struct {
 	Data string `json:"data"`
 }
 
+type NotifyOptions struct {
+	Silent bool
+}
+
 type ServerOptions struct {
 	Cert          string
 	Key           string
@@ -67,11 +71,6 @@ type ServerOptions struct {
 	UploadRoute   string
 	UploadHeaders map[string]string
 	MaxUploadSize int64
-}
-
-type NotifyOptions struct {
-	AppName string
-	Beep    bool
 }
 
 type HTTPResult struct {

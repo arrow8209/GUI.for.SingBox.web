@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue'
 import { useI18n, I18nT } from 'vue-i18n'
 
 import { ClipboardSetText } from '@/bridge'
@@ -19,7 +18,8 @@ import { useModal } from '@/components/Modal'
 
 import type { Menu } from '@/types/app'
 
-const ProfileForm = defineAsyncComponent(() => import('./components/ProfileForm.vue'))
+import ProfileForm from './components/ProfileForm.vue'
+import ProfileEditor from './components/ProfileEditor.vue'
 
 const { t } = useI18n()
 const [Modal, modalApi] = useModal({})
@@ -100,6 +100,14 @@ const secondaryMenusList: Menu[] = [
       } catch (error: any) {
         message.error(error.message || error)
       }
+    },
+  },
+  {
+    label: 'profiles.editSourceFile',
+    handler: async (id: string) => {
+      const profile = profilesStore.getProfileById(id)!
+      modalApi.setProps({ title: profile.name, width: '90', height: '90' })
+      modalApi.setContent(ProfileEditor, { profile }).open()
     },
   },
 ]
@@ -237,6 +245,7 @@ const onSortUpdate = debounce(profilesStore.saveProfiles, 1000)
         <Tag
           v-if="isCreatedBySubscription(p.id)"
           color="primary"
+          size="small"
           style="margin-left: 0"
           @click="showAuto"
         >

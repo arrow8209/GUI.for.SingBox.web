@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed } from 'vue'
 import { useI18n, I18nT } from 'vue-i18n'
 
 import { OpenURI } from '@/bridge'
@@ -13,11 +13,11 @@ import { useModal } from '@/components/Modal'
 
 import type { Menu, Plugin } from '@/types/app'
 
-const PluginChangelog = defineAsyncComponent(() => import('./components/PluginChangelog.vue'))
-const PluginConfigurator = defineAsyncComponent(() => import('./components/PluginConfigurator.vue'))
-const PluginForm = defineAsyncComponent(() => import('./components/PluginForm.vue'))
-const PluginHub = defineAsyncComponent(() => import('./components/PluginHub.vue'))
-const PluginView = defineAsyncComponent(() => import('./components/PluginView.vue'))
+import PluginChangelog from './components/PluginChangelog.vue'
+import PluginConfigurator from './components/PluginConfigurator.vue'
+import PluginForm from './components/PluginForm.vue'
+import PluginHub from './components/PluginHub.vue'
+import PluginView from './components/PluginView.vue'
 
 const menuList: Menu[] = [
   {
@@ -281,7 +281,10 @@ const onSortUpdate = debounce(pluginsStore.savePlugins, 1000)
       class="grid-list-item"
     >
       <template #title-prefix>
-        <Tag v-if="pluginsStore.isDeprecated(p)" color="red"> {{ t('plugins.deprecated') }} </Tag>
+        <Tag v-if="pluginsStore.isDevVersion(p)" color="purple" size="small">Dev</Tag>
+        <Tag v-if="pluginsStore.isDeprecated(p)" color="red" size="small">
+          {{ t('plugins.deprecated') }}
+        </Tag>
         <Tag
           v-if="pluginsStore.hasNewPluginVersion(p)"
           size="small"
@@ -300,7 +303,7 @@ const onSortUpdate = debounce(pluginsStore.savePlugins, 1000)
         >
           ●
         </div>
-        <Tag v-if="p.updating" color="cyan">
+        <Tag v-if="p.updating" color="cyan" size="small">
           {{ t('plugins.updating') }}
         </Tag>
       </template>

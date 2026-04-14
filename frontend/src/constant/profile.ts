@@ -20,7 +20,7 @@ const { t } = i18n.global
 
 const DefaultOutboundIds = {
   Select: 'outbound-select',
-  Urltest: 'outbound-urlte',
+  Urltest: 'outbound-urltest',
   Direct: 'outbound-direct',
   Block: 'outbound-block',
   Fallback: 'outbound-fallback',
@@ -79,7 +79,7 @@ export const DefaultExperimental = (): IExperimental => ({
   },
 })
 
-export const DefaultInboundSocks = (): IInbound['socks'] => ({
+export const DefaultInboundSocks = (): NonNullable<IInbound['socks']> => ({
   listen: {
     listen: '127.0.0.1',
     listen_port: 20120,
@@ -90,7 +90,7 @@ export const DefaultInboundSocks = (): IInbound['socks'] => ({
   users: [],
 })
 
-export const DefaultInboundHttp = (): IInbound['http'] => ({
+export const DefaultInboundHttp = (): NonNullable<IInbound['http']> => ({
   listen: {
     listen: '127.0.0.1',
     listen_port: 20121,
@@ -101,7 +101,7 @@ export const DefaultInboundHttp = (): IInbound['http'] => ({
   users: [],
 })
 
-export const DefaultInboundMixed = (): IInbound['mixed'] => ({
+export const DefaultInboundMixed = (): NonNullable<IInbound['mixed']> => ({
   listen: {
     listen: '127.0.0.1',
     listen_port: 20122,
@@ -112,7 +112,7 @@ export const DefaultInboundMixed = (): IInbound['mixed'] => ({
   users: [],
 })
 
-export const DefaultInboundShadowsocks = (): IInbound['shadowsocks'] => ({
+export const DefaultInboundShadowsocks = (): NonNullable<IInbound['shadowsocks']> => ({
   listen: {
     listen: '127.0.0.1',
     listen_port: 60080,
@@ -125,7 +125,7 @@ export const DefaultInboundShadowsocks = (): IInbound['shadowsocks'] => ({
   users: [],
 })
 
-export const DefaultInboundVless = (): IInbound['vless'] => ({
+export const DefaultInboundVless = (): NonNullable<IInbound['vless']> => ({
   listen: {
     listen: '127.0.0.1',
     listen_port: 443,
@@ -149,7 +149,7 @@ export const DefaultInboundVless = (): IInbound['vless'] => ({
   },
 })
 
-export const DefaultInboundTrojan = (): IInbound['trojan'] => ({
+export const DefaultInboundTrojan = (): NonNullable<IInbound['trojan']> => ({
   listen: {
     listen: '127.0.0.1',
     listen_port: 443,
@@ -167,7 +167,7 @@ export const DefaultInboundTrojan = (): IInbound['trojan'] => ({
   },
 })
 
-export const DefaultInboundTun = (): IInbound['tun'] => ({
+export const DefaultInboundTun = (): NonNullable<IInbound['tun']> => ({
   interface_name: '',
   address: ['172.18.0.1/30', 'fdfe:dcba:9876::1/126'],
   mtu: 0,
@@ -216,6 +216,8 @@ export const DefaultOutbound = (): IOutbound => ({
   tolerance: 150,
   include: '',
   exclude: '',
+  icon: '',
+  hidden: false,
 })
 
 export const DefaultOutbounds = (): IOutbound[] => [
@@ -230,6 +232,8 @@ export const DefaultOutbounds = (): IOutbound[] => [
     tolerance: 150,
     include: '',
     exclude: '',
+    icon: '',
+    hidden: false,
   },
   {
     id: DefaultOutboundIds.Urltest,
@@ -242,6 +246,8 @@ export const DefaultOutbounds = (): IOutbound[] => [
     tolerance: 150,
     include: '',
     exclude: '',
+    icon: '',
+    hidden: false,
   },
   {
     id: DefaultOutboundIds.Direct,
@@ -257,6 +263,8 @@ export const DefaultOutbounds = (): IOutbound[] => [
     tolerance: 150,
     include: '',
     exclude: '',
+    icon: '',
+    hidden: false,
   },
   {
     id: DefaultOutboundIds.Block,
@@ -272,6 +280,8 @@ export const DefaultOutbounds = (): IOutbound[] => [
     tolerance: 150,
     include: '',
     exclude: '',
+    icon: '',
+    hidden: false,
   },
   {
     id: DefaultOutboundIds.Fallback,
@@ -287,6 +297,8 @@ export const DefaultOutbounds = (): IOutbound[] => [
     tolerance: 150,
     include: '',
     exclude: '',
+    icon: '',
+    hidden: false,
   },
   {
     id: DefaultOutboundIds.Global,
@@ -305,6 +317,8 @@ export const DefaultOutbounds = (): IOutbound[] => [
     tolerance: 150,
     include: '',
     exclude: '',
+    icon: '',
+    hidden: false,
   },
 ]
 

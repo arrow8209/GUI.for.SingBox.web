@@ -12,13 +12,14 @@ import {
   RuleType,
   Strategy,
 } from '@/enums/kernel'
+import { Branch } from '@/enums/app'
 import {
   useAppSettingsStore,
   usePluginsStore,
   useRulesetsStore,
   useSubscribesStore,
 } from '@/stores'
-import { deepAssign, deepClone, APP_TITLE, buildSmartRegExp } from '@/utils'
+import { deepAssign, deepClone, APP_TITLE, createTextMatcher } from '@/utils'
 
 const _generateRule = (rule: IRule | IDNSRule, rule_set: IRuleSet[], inbounds: IInbound[]) => {
   const getInbound = (id: string) => inbounds.find((v) => v.id === id)?.tag
@@ -189,16 +190,6 @@ const generateOutbounds = async (outbounds: IOutbound[]) => {
   const proxiesSet = new Set<any>()
   const builtInProxiesSet = new Set<string>()
 
-  const createTagMatcher = (include: string, exclude: string) => {
-    const includeRegex = include ? buildSmartRegExp(include) : null
-    const excludeRegex = exclude ? buildSmartRegExp(exclude) : null
-    return (tag: string) => {
-      const flag1 = includeRegex ? includeRegex.test(tag) : true
-      const flag2 = excludeRegex ? excludeRegex.test(tag) : false
-      return flag1 && !flag2
-    }
-  }
-
   const subscribesStore = useSubscribesStore()
 
   for (const outbound of outbounds) {
@@ -214,7 +205,7 @@ const generateOutbounds = async (outbounds: IOutbound[]) => {
     if (outbound.type === Outbound.Selector || outbound.type === Outbound.Urltest) {
       _outbound.interrupt_exist_connections = outbound.interrupt_exist_connections
       _outbound.outbounds = []
-      const isTagMatching = createTagMatcher(outbound.include, outbound.exclude)
+      const isTagMatching = createTextMatcher(outbound.include, outbound.exclude)
       for (const proxy of outbound.outbounds) {
         if (proxy.type === 'Built-in') {
           if ([Outbound.Direct, Outbound.Block].includes(proxy.id as Outbound)) {
@@ -464,10 +455,33 @@ export const generateDnsServerURL = (dnsServer: IDNSServer) => {
 
 const _adaptToStableBranch = (_: Recordable) => {}
 
-export const generateConfig = async (originalProfile: IProfile, adaptToStableCore?: boolean) => {
+type GenerateConfigOptions = {
+  enableStableConfigCompat?: boolean
+  enablePluginProcessing?: boolean
+  enableMixinProcessing?: boolean
+  enableScriptProcessing?: boolean
+}
+
+export const generateConfig = async (
+  originalProfile: IProfile,
+  options: GenerateConfigOptions = {},
+) => {
+  if (typeof options === 'boolean') {
+    options = { enableStableConfigCompat: options }
+  }
+  const appSettings = useAppSettingsStore()
+  const isMainBranch = appSettings.app.kernel.branch === Branch.Main
+
+  const {
+    enableStableConfigCompat = isMainBranch,
+    enablePluginProcessing = true,
+    enableMixinProcessing = true,
+    enableScriptProcessing = true,
+  } = options
+
   const profile = deepClone(originalProfile)
   // step 1
-  const config: Recordable<any> = {
+  let config: Recordable = {
     log: profile.log,
     experimental: generateExperimental(profile.experimental, profile.outbounds),
     inbounds: generateInbounds(profile.inbounds),
@@ -477,41 +491,44 @@ export const generateConfig = async (originalProfile: IProfile, adaptToStableCor
   }
 
   // adapt to stable branch
-  const appSettings = useAppSettingsStore()
-  const isStableBranch = appSettings.app.kernel.branch === 'main'
-  if ((isStableBranch && adaptToStableCore === undefined) || adaptToStableCore) {
+  if (enableStableConfigCompat) {
     _adaptToStableBranch(config)
   }
 
   // step 2
-  const pluginsStore = usePluginsStore()
-  const _config = await pluginsStore.onGenerateTrigger(config, originalProfile)
+  if (enablePluginProcessing) {
+    const pluginsStore = usePluginsStore()
+    config = await pluginsStore.onGenerateTrigger(config, originalProfile)
+  }
 
   // step 3
-  const { priority, config: mixin } = originalProfile.mixin
-  if (priority === 'mixin') {
-    deepAssign(_config, parse(mixin))
-  } else if (priority === 'gui') {
-    deepAssign(_config, deepAssign(parse(mixin), _config))
+  if (enableMixinProcessing) {
+    const { priority, config: mixin } = originalProfile.mixin
+    if (priority === 'mixin') {
+      deepAssign(config, parse(mixin))
+    } else if (priority === 'gui') {
+      deepAssign(config, deepAssign(parse(mixin), config))
+    }
   }
 
   // step 4
-  const fn = new window.AsyncFunction(
-    'config',
-    `${originalProfile.script.code}; return await onGenerate(config)`,
-  )
-  let result
-  try {
-    result = await fn(_config)
-  } catch (error: any) {
-    throw error.message || error
+  if (enableScriptProcessing) {
+    const fn = new window.AsyncFunction(
+      'config',
+      `${originalProfile.script.code}; return await onGenerate(config)`,
+    )
+    try {
+      config = await fn(config)
+    } catch (error: any) {
+      throw error.message || error
+    }
+
+    if (typeof config !== 'object') {
+      throw 'Wrong result'
+    }
   }
 
-  if (typeof result !== 'object') {
-    throw 'Wrong result'
-  }
-
-  return result
+  return config
 }
 
 export const generateConfigFile = async (

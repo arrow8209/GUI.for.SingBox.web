@@ -176,6 +176,8 @@ export default {
       subscriptions: 'Subscriptions',
       include: 'Include',
       exclude: 'Exclude',
+      icon: 'Icon',
+      hidden: 'Hidden',
     },
     route: {
       tab: {
@@ -508,6 +510,7 @@ export default {
     outbounds: 'Outbounds',
     dnsServers: 'DNS Servers',
     dnsRules: 'DNS Rules',
+    editSourceFile: 'Edit Configuration (Source File)',
   },
   ruleset: {
     manual: 'MANUAL',
@@ -679,7 +682,7 @@ export default {
     needAdmin: 'Admin required',
     exitOnClose: 'Exit on window close',
     closeKernelOnExit: 'Stop core on exit',
-    autoSetSystemProxy: 'Auto Set / Clear System Proxy',
+    autoSetSystemProxy: 'Auto-configure System Proxy',
     proxyBypassList: 'Proxy Bypass List',
     proxyBypassListTips: 'Separate with semicolons',
     autoStartKernel: 'Start core on launch',
@@ -744,7 +747,6 @@ export default {
     restart: 'Restart APP',
     noDownloadLink: 'No download link found',
     updateSuccessfulRestart: 'Update completed, please restart the App',
-    updateSuccessfulReplace: 'Download completed, please manually replace the App',
     updateSuccessful: 'Update completed',
     newVersion: 'New version found',
     latestVersion: 'Already the latest version',

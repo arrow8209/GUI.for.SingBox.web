@@ -176,6 +176,8 @@ export default {
       subscriptions: '订阅',
       include: '包含',
       exclude: '排除',
+      icon: '图标',
+      hidden: '隐藏',
     },
     route: {
       tab: {
@@ -507,6 +509,7 @@ export default {
     outbounds: '出站',
     dnsServers: 'DNS服务器',
     dnsRules: 'DNS规则',
+    editSourceFile: '编辑配置(源文件)',
   },
   ruleset: {
     manual: '手动管理',
@@ -678,7 +681,7 @@ export default {
     needAdmin: '需要管理员权限',
     exitOnClose: '关闭窗口时退出程序',
     closeKernelOnExit: '程序退出时关闭核心',
-    autoSetSystemProxy: '自动配置/清除系统代理',
+    autoSetSystemProxy: '自动配置系统代理',
     proxyBypassList: '不使用代理的地址',
     proxyBypassListTips: '分号分隔',
     autoStartKernel: '程序启动时开启核心',
@@ -743,7 +746,6 @@ export default {
     restart: '重启软件',
     noDownloadLink: '没有发现下载链接',
     updateSuccessfulRestart: '更新完成，请重启软件',
-    updateSuccessfulReplace: '下载完成，请手动替换软件',
     updateSuccessful: '更新完成',
     newVersion: '发现新版本',
     latestVersion: '已经是最新版本了',

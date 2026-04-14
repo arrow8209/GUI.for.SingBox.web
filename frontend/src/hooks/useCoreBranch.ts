@@ -17,7 +17,7 @@ import {
   OpenDir,
 } from '@/bridge'
 import { CoreWorkingDirectory } from '@/constant/kernel'
-import { Branch } from '@/enums/app'
+import { Branch, OS } from '@/enums/app'
 import { useAppSettingsStore, useEnvStore, useKernelApiStore } from '@/stores'
 import {
   getGitHubApiAuthorization,
@@ -31,7 +31,7 @@ import {
 } from '@/utils'
 
 const StableUrl = 'https://api.github.com/repos/SagerNet/sing-box/releases/latest'
-const AlphaUrl = 'https://api.github.com/repos/SagerNet/sing-box/releases?per_page=2'
+const AlphaUrl = 'https://api.github.com/repos/SagerNet/sing-box/releases?per_page=3'
 
 const StablePage = 'https://github.com/SagerNet/sing-box/releases/latest'
 const AlphaPage = 'https://github.com/SagerNet/sing-box/releases'
@@ -65,7 +65,7 @@ export const useCoreBranch = (isAlpha = false) => {
     () => remoteVersion.value && localVersion.value !== remoteVersion.value,
   )
 
-  const grantable = computed(() => localVersion.value && envStore.env.os !== 'windows')
+  const grantable = computed(() => localVersion.value && envStore.env.os !== OS.Windows)
 
   const CoreFilePath = `${CoreWorkingDirectory}/${getKernelFileName(isAlpha)}`
   const CoreBakFilePath = `${CoreFilePath}.bak`

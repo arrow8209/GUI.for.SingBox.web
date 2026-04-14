@@ -122,7 +122,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       } catch (error) {
         console.error('[kernelApi] failed to restore runtime profile', error)
       }
-      const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
+      const profile =
+        profilesStore.getProfileById(appSettingsStore.app.kernel.profile) ||
+        profilesStore.currentProfile
       if (!runtimeProfile && profile) {
         runtimeProfile = deepClone(profile)
         console.info('[kernelApi] fallback runtime profile created from selected profile', {
@@ -135,17 +137,15 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       }
       if (profile) {
         const _profile = deepClone(profile)
-        runtimeProfile.inbounds.forEach((inbound) => {
-          const _in = _profile.inbounds.find((v) => v.tag === inbound.tag)
-          if (_in) {
-            inbound.id = _in.id
+        _profile.inbounds.forEach((inbound) => {
+          const runtimeInbound = runtimeProfile?.inbounds.find((v) => v.tag === inbound.tag)
+          if (runtimeInbound) {
+            runtimeInbound.id = inbound.id
+          } else {
+            inbound.enable = false
+            runtimeProfile?.inbounds.push(inbound)
           }
         })
-        const tunInbound = _profile.inbounds.find((v) => v.type === Inbound.Tun)
-        if (tunInbound && !runtimeProfile.inbounds.find((v) => v.type === Inbound.Tun)) {
-          tunInbound.enable = false
-          runtimeProfile.inbounds.push(tunInbound)
-        }
         runtimeProfile.id = _profile.id
         runtimeProfile.outbounds = _profile.outbounds
         runtimeProfile.experimental = _profile.experimental
@@ -161,9 +161,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       return
     }
 
-    const mixed = runtimeProfile.inbounds.find((v) => v.mixed)
-    const http = runtimeProfile.inbounds.find((v) => v.http)
-    const socks = runtimeProfile.inbounds.find((v) => v.socks)
+    const mixed = runtimeProfile.inbounds.find((v) => v.enable && v.mixed)
+    const http = runtimeProfile.inbounds.find((v) => v.enable && v.http)
+    const socks = runtimeProfile.inbounds.find((v) => v.enable && v.socks)
     const tun = runtimeProfile.inbounds.find((v) => v.tun)
     config.value['mixed-port'] = mixed?.mixed?.listen.listen_port || 0
     config.value['port'] = http?.http?.listen.listen_port || 0
@@ -194,6 +194,20 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       await setConfigs({ mode: value })
       await refreshConfig()
       return
+    }
+
+    const patchInbound = () => {
+      if (!runtimeProfile) return
+      const inbound = runtimeProfile.inbounds.find(
+        (v) =>
+          (v.type === Inbound.Mixed && v.mixed?.listen.listen_port) ||
+          (v.type === Inbound.Http && v.http?.listen.listen_port) ||
+          (v.type === Inbound.Socks && v.socks?.listen.listen_port),
+      )
+      if (!inbound) {
+        throw 'home.overview.needPort'
+      }
+      inbound.enable = true
     }
 
     const patchInboundPort = (type: 'mixed' | 'socks' | 'http', port: number) => {
@@ -244,6 +258,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     }
 
     const fieldHandlerMap: Recordable<() => void> = {
+      inbound: () => patchInbound(),
       http: () => patchInboundPort(Inbound.Http, value),
       socks: () => patchInboundPort(Inbound.Socks, value),
       mixed: () => patchInboundPort(Inbound.Mixed, value),
@@ -256,7 +271,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
 
     fieldHandlerMap[field]?.()
 
-    await restartCore()
+    await restartCore(undefined, true)
     await envStore.updateSystemProxyStatus()
   }
 
@@ -406,7 +421,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       return ProcessInfo(pid).catch(() => '')
     }
 
-    let pidTxt = await ReadFile(CorePidFilePath).catch(() => '')
+    const pidTxt = await ReadFile(CorePidFilePath).catch(() => '')
     let pid = pidTxt ? parsePid(pidTxt) : -1
     let processName = await describeProcess(pid)
 
@@ -538,7 +553,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     }
   }
 
-  const restartCore = async (cleanupTask?: () => Promise<any>, keepRuntimeProfile = true) => {
+  const restartCore = async (cleanupTask?: () => Promise<any>, keepRuntimeProfile = false) => {
     restarting.value = true
     try {
       await stopCore()
@@ -684,19 +699,5 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     onMemory: createCoreWSHandlerRegister(websocketHandlers.memory),
     onTraffic: createCoreWSHandlerRegister(websocketHandlers.traffic),
     onConnections: createCoreWSHandlerRegister(websocketHandlers.connections),
-
-    // Deprecated
-    startKernel: (...args: any[]) => {
-      console.warn('[Deprecated] "startKernel" is deprecated. Please use "startCore" instead.')
-      startCore(...args)
-    },
-    stopKernel: () => {
-      console.warn('[Deprecated] "stopKernel" is deprecated. Please use "stopCore" instead.')
-      stopCore()
-    },
-    restartKernel: (...args: any[]) => {
-      console.warn('[Deprecated] "restartKernel" is deprecated. Please use "restartCore" instead.')
-      restartCore(...args)
-    },
   }
 })

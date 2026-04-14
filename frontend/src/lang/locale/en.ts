@@ -329,7 +329,6 @@ export default {
         payload: 'Payload',
         action: 'Action',
         server: 'Server',
-        addRules: 'Add FakeIP DNS rules',
       },
     },
     mode: 'Mode',
@@ -384,7 +383,7 @@ export default {
       settingsTips:
         'Takes effect temporarily. For persistent changes, please modify the `profile` settings.',
       updateGEO: 'Update GEO',
-      needPort: 'Please set the proxy port first',
+      needPort: 'Please add a Mixed/Http/Socks inbound first',
       needTun: 'Please add a TUN inbound first',
     },
     controller: {
@@ -607,6 +606,9 @@ export default {
     'update::subscription': 'update::subscription',
     'update::ruleset': 'update::ruleset',
     'update::plugin': 'update::plugin',
+    'update::all::subscription': 'update::all::subscription',
+    'update::all::ruleset': 'update::all::ruleset',
+    'update::all::plugin': 'update::all::plugin',
     'run::plugin': 'run::plugin',
     'run::script': 'run::script',
   },
@@ -621,6 +623,7 @@ export default {
     empty: 'The scheduled task list is empty. Please{action}a scheduled task first.',
     run: 'Run now',
     log: 'View log',
+    next: 'Next Run Time',
   },
   settings: {
     personalization: 'Personalization',

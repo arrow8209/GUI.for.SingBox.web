@@ -4,7 +4,7 @@ import { ref, watch } from 'vue'
 import { IsStartup } from '@/bridge'
 import { NavigationBar, TitleBar } from '@/components'
 import * as Stores from '@/stores'
-import { exitApp, sampleID, sleep, message } from '@/utils'
+import { sleep, message } from '@/utils'
 import AboutView from '@/views/AboutView.vue'
 import CommandView from '@/views/CommandView.vue'
 import SplashView from '@/views/SplashView.vue'
@@ -27,7 +27,7 @@ const bootstrapped = ref(false)
 
 const handleRestartCore = async () => {
   try {
-    await kernelApiStore.restartCore(undefined, false)
+    await kernelApiStore.restartCore()
   } catch (e: any) {
     message.error(e.message || e)
   }

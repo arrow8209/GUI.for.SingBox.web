@@ -17,6 +17,7 @@ import {
   omitArray,
   asyncPool,
   eventBus,
+  buildSmartRegExp,
 } from '@/utils'
 
 import type { Subscription } from '@/types/app'
@@ -35,40 +36,6 @@ export const useSubscribesStore = defineStore('subscribes', () => {
   const setupSubscribes = async () => {
     const data = await ignoredError(ReadFile, SubscribesFilePath)
     data && (subscribes.value = parse(data))
-
-    let needSync = false
-    subscribes.value.forEach((sub) => {
-      if (!sub.script) {
-        sub.script = DefaultSubscribeScript
-        needSync = true
-      }
-      if (!sub.requestMethod) {
-        sub.requestMethod = RequestMethod.Get
-        needSync = true
-      }
-      if (!sub.requestTimeout) {
-        sub.requestTimeout = 15
-        needSync = true
-      }
-      if (!sub.header) {
-        sub.header = {
-          request: {},
-          response: {},
-        }
-        // @ts-expect-error(Deprecated `userAgent`)
-        if (sub.userAgent) {
-          // @ts-expect-error(Deprecated `userAgent`)
-          sub.header.request['User-Agent'] = sub.userAgent
-          // @ts-expect-error(Deprecated `userAgent`)
-          delete sub.userAgent
-        }
-        needSync = true
-      }
-    })
-
-    if (needSync) {
-      await saveSubscribes()
-    }
   }
 
   const saveSubscribes = () => {
@@ -90,35 +57,7 @@ export const useSubscribesStore = defineStore('subscribes', () => {
   }
 
   const importSubscribe = async (name: string, url: string) => {
-    const id = sampleID()
-    await addSubscribe({
-      id: id,
-      name: name,
-      upload: 0,
-      download: 0,
-      total: 0,
-      expire: 0,
-      updateTime: 0,
-      type: 'Http',
-      url: url,
-      website: '',
-      path: `data/subscribes/${id}.json`,
-      include: '',
-      exclude: '',
-      includeProtocol: '',
-      excludeProtocol: DefaultExcludeProtocols,
-      proxyPrefix: '',
-      disabled: false,
-      inSecure: false,
-      requestMethod: RequestMethod.Get,
-      requestTimeout: 15,
-      header: {
-        request: {},
-        response: {},
-      },
-      proxies: [],
-      script: DefaultSubscribeScript,
-    })
+    await addSubscribe(getSubscribeTemplate(name, { url }))
   }
 
   const deleteSubscribe = async (id: string) => {
@@ -204,12 +143,17 @@ export const useSubscribesStore = defineStore('subscribes', () => {
     }
 
     if (s.type !== 'Manual') {
-      proxies = proxies.filter((v: any) => {
-        const flag1 = s.include ? new RegExp(s.include).test(v.tag) : true
-        const flag2 = s.exclude ? !new RegExp(s.exclude).test(v.tag) : true
-        const flag3 = s.includeProtocol ? new RegExp(s.includeProtocol).test(v.type) : true
-        const flag4 = s.excludeProtocol ? !new RegExp(s.excludeProtocol).test(v.type) : true
-        return flag1 && flag2 && flag3 && flag4
+      const r1 = s.include && buildSmartRegExp(s.include)
+      const r2 = s.exclude && buildSmartRegExp(s.exclude)
+      const r3 = s.includeProtocol && buildSmartRegExp(s.includeProtocol)
+      const r4 = s.excludeProtocol && buildSmartRegExp(s.excludeProtocol)
+
+      proxies = proxies.filter((v) => {
+        const flag1 = r1 ? r1.test(v.tag) : true
+        const flag2 = r2 ? r2.test(v.tag) : false
+        const flag3 = r3 ? r3.test(v.type) : true
+        const flag4 = r4 ? r4.test(v.type) : false
+        return flag1 && !flag2 && flag3 && !flag4
       })
 
       if (s.proxyPrefix) {
@@ -262,7 +206,7 @@ export const useSubscribesStore = defineStore('subscribes', () => {
     } catch (error) {
       const message = formatSubscribeError(error)
       console.error('updateSubscribe: ', s.name, message)
-      throw message
+      throw `Failed to update subscription [${s.name}]. Reason: ${message}`
     } finally {
       s.updating = false
     }
@@ -276,16 +220,22 @@ export const useSubscribesStore = defineStore('subscribes', () => {
     let needSave = false
 
     const update = async (s: Subscription) => {
+      const result = { ok: true, id: s.id, name: s.name, result: '' }
       try {
         s.updating = true
         await _doUpdateSub(s)
         needSave = true
+        result.result = `Subscription [${s.name}] updated successfully.`
+      } catch (error: any) {
+        result.ok = false
+        result.result = `Failed to update subscription [${s.name}]. Reason: ${error.message || error}`
       } finally {
         s.updating = false
       }
+      return result
     }
 
-    await asyncPool(
+    const result = await asyncPool(
       5,
       subscribes.value.filter((v) => !v.disabled),
       update,
@@ -294,9 +244,43 @@ export const useSubscribesStore = defineStore('subscribes', () => {
     if (needSave) await saveSubscribes()
 
     eventBus.emit('subscriptionsChange', undefined)
+
+    return result.flatMap((v) => (v.ok && v.value) || [])
   }
 
   const getSubscribeById = (id: string) => subscribes.value.find((v) => v.id === id)
+
+  const getSubscribeTemplate = (name = '', options: { url?: string } = {}): Subscription => {
+    const id = sampleID()
+    return {
+      id: id,
+      name: name,
+      upload: 0,
+      download: 0,
+      total: 0,
+      expire: 0,
+      updateTime: 0,
+      type: 'Http',
+      url: options.url || '',
+      website: '',
+      path: `data/subscribes/${id}.json`,
+      include: '',
+      exclude: '',
+      includeProtocol: '',
+      excludeProtocol: DefaultExcludeProtocols,
+      proxyPrefix: '',
+      disabled: false,
+      inSecure: false,
+      requestMethod: RequestMethod.Get,
+      requestTimeout: 15,
+      header: {
+        request: {},
+        response: {},
+      },
+      proxies: [],
+      script: DefaultSubscribeScript,
+    }
+  }
 
   return {
     subscribes,
@@ -309,5 +293,6 @@ export const useSubscribesStore = defineStore('subscribes', () => {
     updateSubscribes,
     getSubscribeById,
     importSubscribe,
+    getSubscribeTemplate,
   }
 })

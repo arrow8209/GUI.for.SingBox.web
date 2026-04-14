@@ -87,7 +87,7 @@ export const usePluginsStore = defineStore('plugins', () => {
     list && (pluginHub.value = JSON.parse(list))
 
     for (const plugin of plugins.value) {
-      const { id, triggers, path, context, hasUI, tags } = plugin
+      const { id, triggers, path } = plugin
       const code = await ignoredError(ReadFile, path)
       if (code) {
         PluginsCache[id] = { plugin, code }
@@ -95,31 +95,7 @@ export const usePluginsStore = defineStore('plugins', () => {
           PluginsTriggerMap[trigger].observers.push(id)
         })
       }
-
-      if (!context) {
-        plugin.context = {
-          profiles: {},
-          subscriptions: {},
-          rulesets: {},
-          plugins: {},
-          scheduledtasks: {},
-        }
-      }
-
-      if (hasUI === undefined) {
-        plugin.hasUI = false
-      }
-
-      if (tags === undefined) {
-        plugin.tags = []
-      }
     }
-
-    pluginHub.value.forEach((plugin) => {
-      if (plugin.tags === undefined) {
-        plugin.tags = []
-      }
-    })
   }
 
   const getPluginMetadata = (plugin: Plugin) => {
@@ -288,22 +264,30 @@ export const usePluginsStore = defineStore('plugins', () => {
     let needSave = false
 
     const update = async (plugin: Plugin) => {
+      const result = { ok: true, id: plugin.id, name: plugin.name, result: '' }
       try {
         plugin.updating = true
         await _doUpdatePlugin(plugin)
         needSave = true
+        result.result = `Plugin [${plugin.name}] updated successfully.`
+      } catch (error: any) {
+        result.ok = false
+        result.result = `Failed to update plugin [${plugin.name}]. Reason: ${error.message || error}`
       } finally {
         plugin.updating = false
       }
+      return result
     }
 
-    await asyncPool(
+    const result = await asyncPool(
       5,
       plugins.value.filter((v) => !v.disabled),
       update,
     )
 
     if (needSave) await savePlugins()
+
+    return result.flatMap((v) => (v.ok && v.value) || [])
   }
 
   const pluginHubLoading = ref(false)

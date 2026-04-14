@@ -1,5 +1,6 @@
-import { httpClient } from './http'
 import { message } from '@/utils'
+
+import { httpClient } from './http'
 
 interface IOOptions {
   Mode?: 'Binary' | 'Text'
@@ -95,11 +96,3 @@ export const UnzipTarGZFile = async (path: string, output: string) => {
   const res = await httpClient.post<{ flag: boolean; data: string }>('/files/unzip/targz', { path, output })
   return assertFlag(res)
 }
-
-export const Writefile = WriteFile
-export const Readfile = ReadFile
-export const Movefile = MoveFile
-export const Removefile = RemoveFile
-export const Copyfile = CopyFile
-export const Makedir = MakeDir
-export const Readdir = ReadDir

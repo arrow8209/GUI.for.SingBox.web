@@ -29,7 +29,18 @@ export const UpdateTrayMenus = async () => {
   // Tray menus not supported in web mode.
 }
 
-export const GetEnv = () => httpClient.get<EnvResult>('/env')
+export const GetEnv = (<T extends string | undefined = undefined>(
+  key?: T,
+): Promise<T extends string ? string : EnvResult> => {
+  if (key) {
+    // Web 模式下不暴露服务器环境变量，返回空串保证上游桌面专用代码路径不崩
+    return Promise.resolve('' as any)
+  }
+  return httpClient.get<EnvResult>('/env') as any
+}) as {
+  (): Promise<EnvResult>
+  (key: string): Promise<string>
+}
 
 export const IsStartup = () =>
   httpClient.get<{ startup: boolean }>('/startup').then((res) => res.startup)

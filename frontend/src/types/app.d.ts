@@ -12,6 +12,7 @@ import type {
   PluginTrigger,
   ScheduledTasksType,
   RequestMethod,
+  OS,
 } from '@/enums/app'
 
 export interface AppEnv {
@@ -19,7 +20,7 @@ export interface AppEnv {
   appVersion: string
   basePath: string
   appPath: string
-  os: string
+  os: OS
   arch: string
   isPrivileged: boolean
 }
@@ -154,8 +155,6 @@ export interface Plugin {
   }
   configuration: PluginConfiguration[]
   disabled: boolean
-  install: boolean
-  installed: boolean
   status: number // 0: Normal 1: Running 2: Stopped
   // Not Config
   updating?: boolean

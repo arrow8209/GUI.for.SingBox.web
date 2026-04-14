@@ -540,6 +540,9 @@ export default {
   },
   plugin: {
     trigger: 'Trigger',
+    'on::enabled': 'on::enabled',
+    'on::disabled': 'on::disabled',
+    'on::dispose': 'on::dispose',
     'on::manual': 'on::manual',
     'on::startup': 'on::startup',
     'on::shutdown': 'on::shutdown',
@@ -560,8 +563,6 @@ export default {
     version: 'Version',
     description: 'Description',
     url: 'Remote Url',
-    install: 'Installation required',
-    installed: 'Installed',
     path: 'Save Path',
     type: 'Type',
     menus: 'Menus',

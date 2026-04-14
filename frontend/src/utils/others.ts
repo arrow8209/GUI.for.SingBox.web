@@ -2,6 +2,7 @@ import { stringify } from 'yaml'
 
 import { useAppSettingsStore } from '@/stores'
 import { APP_TITLE } from '@/utils'
+import { OS } from '@/enums/app'
 
 export const deepClone = <T>(json: T): T => JSON.parse(JSON.stringify(json))
 
@@ -188,9 +189,9 @@ export const getGitHubApiAuthorization = () => {
   return appSettings.app.githubApiToken ? `Bearer ${appSettings.app.githubApiToken}` : ''
 }
 
-// System ScheduledTask Helper
-export const getTaskSchXmlString = (appPath: string, delay = 30) => {
-  const xml = /*xml*/ `<?xml version="1.0" encoding="UTF-16"?>
+export const getAutoStartConfiguration = (os: OS, appPath: string, delay = 30) => {
+  if (os === OS.Windows) {
+    const xml = /*xml*/ `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>${APP_TITLE} at startup</Description>
@@ -233,9 +234,38 @@ export const getTaskSchXmlString = (appPath: string, delay = 30) => {
       <Arguments>tasksch</Arguments>
     </Exec>
   </Actions>
-</Task>
-`
-  return xml
+</Task>`
+    return xml
+  }
+  if (os === OS.Linux) {
+    const desktop = `[Desktop Entry]
+Type=Application
+Exec=${appPath} tasksch
+Name=${APP_TITLE}`
+    return desktop
+  }
+  if (os === OS.Darwin) {
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${APP_TITLE}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/open</string>
+        <string>${appPath}</string>
+        <string>--args</string>
+        <string>tasksch</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>`
+    return plist
+  }
+  throw new Error('Not Implemented')
 }
 
 export const setIntervalImmediately = (func: () => void, interval: number) => {

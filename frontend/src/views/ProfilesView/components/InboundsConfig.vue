@@ -12,6 +12,8 @@ import {
   DefaultInboundTun,
   DefaultInboundShadowsocks,
   DefaultInboundCustom,
+  DefaultInboundVless,
+  DefaultInboundTrojan,
 } from '@/constant/profile'
 import { Inbound } from '@/enums/kernel'
 import { getKernelFileName, message, picker, sampleID } from '@/utils'
@@ -123,6 +125,30 @@ const inbounds = [
       }
       model.value.push(inbound)
       refreshShadowsocksPassword(inbound)
+    },
+  },
+  {
+    label: 'VLESS Reality',
+    value: () => {
+      model.value.push({
+        id: sampleID(),
+        tag: 'vless-reality-in',
+        type: Inbound.VLESS,
+        enable: true,
+        vless: DefaultInboundVless(),
+      })
+    },
+  },
+  {
+    label: 'Trojan TLS',
+    value: () => {
+      model.value.push({
+        id: sampleID(),
+        tag: 'trojan-tls-in',
+        type: Inbound.Trojan,
+        enable: true,
+        trojan: DefaultInboundTrojan(),
+      })
     },
   },
   {

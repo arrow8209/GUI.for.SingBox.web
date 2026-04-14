@@ -8,6 +8,7 @@ interface ExecOptions {
   Convert?: boolean
   Env?: Record<string, any>
   StopOutputKeyword?: string
+  WorkingDirectory?: string
   convert?: boolean
   env?: Record<string, any>
   stopOutputKeyword?: string
@@ -18,6 +19,7 @@ const mergeExecOptions = (options: ExecOptions = {}) => ({
   Convert: options.Convert ?? options.convert ?? false,
   Env: options.Env ?? options.env ?? {},
   StopOutputKeyword: options.StopOutputKeyword ?? options.stopOutputKeyword ?? '',
+  WorkingDirectory: options.WorkingDirectory ?? '',
 })
 
 const assertFlag = (res: { flag: boolean; data: string }) => {

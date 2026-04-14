@@ -8,7 +8,6 @@ import {
   LogLevel,
   Outbound,
   RuleAction,
-  RuleActionReject,
   RulesetType,
   RuleType,
   Strategy,
@@ -463,15 +462,7 @@ export const generateDnsServerURL = (dnsServer: IDNSServer) => {
   return address
 }
 
-const _adaptToStableBranch = (config: Recordable) => {
-  config.route.rules.forEach((rule: Recordable) => {
-    if (rule.action === RuleAction.Reject) {
-      if (rule.method === RuleActionReject.Reply) {
-        delete rule.method
-      }
-    }
-  })
-}
+const _adaptToStableBranch = (_: Recordable) => {}
 
 export const generateConfig = async (originalProfile: IProfile, adaptToStableCore?: boolean) => {
   const profile = deepClone(originalProfile)

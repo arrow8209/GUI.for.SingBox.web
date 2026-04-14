@@ -4,6 +4,7 @@ import { httpClient } from './http'
 
 interface IOOptions {
   Mode?: 'Binary' | 'Text'
+  Range?: string
 }
 
 const assertFlag = (res: { flag: boolean; data: string }) => {
@@ -16,6 +17,7 @@ export const WriteFile = async (path: string, content: string, options: IOOption
     path,
     content,
     mode: options.Mode || 'Text',
+    range: options.Range || '',
   })
   return assertFlag(res)
 }
@@ -24,6 +26,7 @@ export const ReadFile = async (path: string, options: IOOptions = {}) => {
   const res = await httpClient.post<{ flag: boolean; data: string }>('/files/read', {
     path,
     mode: options.Mode || 'Text',
+    range: options.Range || '',
   })
   return assertFlag(res)
 }

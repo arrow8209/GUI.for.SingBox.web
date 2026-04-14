@@ -1,6 +1,6 @@
+import { Request } from '@/api/request'
 import { apiBaseURL } from '@/bridge/http'
 import { useAppSettingsStore, useProfilesStore } from '@/stores'
-import { Request } from '@/utils/request'
 
 import type { CoreApiConfig, CoreApiProxies, CoreApiConnections } from '@/types/kernel'
 
@@ -30,20 +30,15 @@ const setupKernelApi = () => {
 
 const request = new Request({ beforeRequest: setupKernelApi, timeout: 60 * 1000 })
 
+// restful api
 export const getConfigs = () => request.get<CoreApiConfig>(Api.Configs)
-
 export const setConfigs = (body = {}) => request.patch<null>(Api.Configs, body)
-
 export const getProxies = () => request.get<CoreApiProxies>(Api.Proxies)
-
 export const getConnections = () => request.get<CoreApiConnections>(Api.Connections)
-
 export const deleteConnection = (id: string) => request.delete<null>(Api.Connections + '/' + id)
-
 export const useProxy = (group: string, proxy: string) => {
   return request.put<null>(Api.Proxies + '/' + group, { name: proxy })
 }
-
 export const getProxyDelay = (proxy: string, url: string) => {
   return request.get<Record<string, number>>(Api.ProxyDelay.replace('{0}', proxy), {
     url,
@@ -51,11 +46,15 @@ export const getProxyDelay = (proxy: string, url: string) => {
   })
 }
 
+// websocket api 实现在 stores/kernelApi.ts (走 Core Proxy WS upgrade)
+
 export const resolveCoreConnection = (): CoreConnectionOptions => {
   const appSettingsStore = useAppSettingsStore()
   const profilesStore = useProfilesStore()
   const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
-  const controller = (profile?.experimental.clash_api.external_controller || '127.0.0.1:20123').trim()
+  const controller = (
+    profile?.experimental.clash_api.external_controller || '127.0.0.1:20123'
+  ).trim()
   let normalized = controller
   if (!normalized.includes('://')) {
     normalized = `http://${normalized}`
@@ -95,7 +94,8 @@ export const getCoreProxyBase = () => {
   }
   try {
     const url = new URL(base, window.location.origin)
-    url.pathname = (url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname) + '/core'
+    url.pathname =
+      (url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname) + '/core'
     url.search = ''
     url.hash = ''
     return url.toString()

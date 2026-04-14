@@ -61,13 +61,18 @@ const props = withDefaults(defineProps<Props>(), {
   cancelText: 'common.cancel',
   submitText: 'common.save',
   maskClosable: false,
+  class: undefined,
   toolbar: () => ({
     maximize: true,
     minimize: true,
   }),
+  onOk: undefined,
+  onCancel: undefined,
+  beforeClose: undefined,
+  afterClose: undefined,
 })
 
-const open = defineModel('open', { default: false })
+const open = defineModel<boolean>('open', { default: false })
 
 const cancelLoading = ref(false)
 const submitLoading = ref(false)
@@ -157,9 +162,9 @@ provide(IS_IN_MODAL, true)
     <Transition name="modal" :duration="200">
       <div
         v-if="open"
-        @click.self="onMaskClick"
         :style="{ zIndex: modalZindex }"
         class="gui-modal-mask fixed inset-0 flex items-center justify-center backdrop-blur-sm"
+        @click.self="onMaskClick"
       >
         <div
           :style="contentStyle"
@@ -168,16 +173,16 @@ provide(IS_IN_MODAL, true)
         >
           <div
             v-if="title || slots.title || slots.toolbar"
-            @dblclick="toggleMaximize"
             class="flex items-center p-16"
+            @dblclick.self="toggleMaximize"
           >
             <slot name="title">
               <div v-if="title" class="font-bold">{{ t(title) }}</div>
             </slot>
-            <div class="ml-auto">
+            <div class="ml-auto" style="--wails-draggable: false">
               <slot name="toolbar"></slot>
               <!-- <Button v-if="toolbar.minimize" @click="toggleMinimize" icon="minimize" type="text" /> -->
-              <Button v-if="toolbar.maximize" @click="toggleMaximize" type="text">
+              <Button v-if="toolbar.maximize" type="text" @click="toggleMaximize">
                 <Icon
                   :class="{ maximize: isMaximize }"
                   icon="arrowDown"
@@ -194,15 +199,15 @@ provide(IS_IN_MODAL, true)
             <slot name="cancel">
               <Button
                 v-if="cancel"
-                @click="handleCancel"
                 :loading="cancelLoading"
                 :type="maskClosable ? 'text' : 'normal'"
+                @click="handleCancel"
               >
                 {{ t(cancelText) }}
               </Button>
             </slot>
             <slot name="submit">
-              <Button v-if="submit" @click="handleSubmit" :loading="submitLoading" type="primary">
+              <Button v-if="submit" :loading="submitLoading" type="primary" @click="handleSubmit">
                 {{ t(submitText) }}
               </Button>
             </slot>

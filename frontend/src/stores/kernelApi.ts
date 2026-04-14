@@ -1,7 +1,15 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
-import { getProxies, getConfigs, setConfigs, Api, resolveCoreConnection, getCoreProxyBase } from '@/api/kernel'
+import {
+  getProxies,
+  getConfigs,
+  setConfigs,
+  Api,
+  resolveCoreConnection,
+  getCoreProxyBase,
+} from '@/api/kernel'
+import { WebSockets } from '@/api/websocket'
 import { ProcessInfo, KillProcess, ExecBackground, ReadFile, WriteFile, RemoveFile } from '@/bridge'
 import {
   CoreConfigFilePath,
@@ -25,16 +33,15 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import {
   generateConfigFile,
-  updateTrayMenus,
+  updateTrayAndMenus,
   getKernelFileName,
   restoreProfile,
   deepClone,
-  WebSockets,
-  setIntervalImmediately,
   message,
   getKernelRuntimeArgs,
   getKernelRuntimeEnv,
   eventBus,
+  setIntervalImmediately,
 } from '@/utils'
 
 import type {
@@ -327,6 +334,11 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     }
   }
 
+  const onLogs = createCoreWSHandlerRegister(websocketHandlers.logs, onLogsEvents)
+  const onMemory = createCoreWSHandlerRegister(websocketHandlers.memory)
+  const onTraffic = createCoreWSHandlerRegister(websocketHandlers.traffic)
+  const onConnections = createCoreWSHandlerRegister(websocketHandlers.connections)
+
   const initCoreWebsockets = () => {
     websocketInstance = new WebSockets({
       beforeConnect() {
@@ -446,7 +458,6 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
 
     if (running.value) {
       initCoreWebsockets()
-      longLivedWS.setup?.()
       await Promise.all([refreshConfig(), refreshProviderProxies()])
       await envStore.updateSystemProxyStatus()
     } else if (appSettingsStore.app.autoStartKernel) {
@@ -471,14 +482,16 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
           onCoreStopped()
           reject(output)
         },
-        { StopOutputKeyword: CoreStopOutputKeyword, Env: getKernelRuntimeEnv(isAlpha) },
+        {
+          PidFile: CorePidFilePath,
+          StopOutputKeyword: CoreStopOutputKeyword,
+          Env: getKernelRuntimeEnv(isAlpha),
+        },
       ).catch((e) => reject(e))
     })
   }
 
   const onCoreStarted = async (pid: number) => {
-    await WriteFile(CorePidFilePath, String(pid))
-
     corePid.value = pid
     running.value = true
     needRestart.value = false
@@ -486,7 +499,6 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     coreStoppedPromise = new Promise((r) => (coreStoppedResolver = r))
 
     initCoreWebsockets()
-    longLivedWS.setup?.()
     await Promise.all([refreshConfig(), refreshProviderProxies()])
 
     if (appSettingsStore.app.autoSetSystemProxy) {
@@ -498,7 +510,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
   }
 
   const onCoreStopped = async () => {
-    await RemoveFile(CorePidFilePath)
+    if (!isCoreStartedByThisInstance) {
+      await RemoveFile(CorePidFilePath)
+    }
 
     corePid.value = -1
     running.value = false
@@ -674,7 +688,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     return source.concat([proxySignature, unAvailable, sortByDelay]).join('')
   })
 
-  watch([watchSources, running], updateTrayMenus)
+  watch([watchSources, running], updateTrayAndMenus)
 
   return {
     startCore,
@@ -695,9 +709,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     refreshProviderProxies,
     getProxyPort,
 
-    onLogs: createCoreWSHandlerRegister(websocketHandlers.logs, onLogsEvents),
-    onMemory: createCoreWSHandlerRegister(websocketHandlers.memory),
-    onTraffic: createCoreWSHandlerRegister(websocketHandlers.traffic),
-    onConnections: createCoreWSHandlerRegister(websocketHandlers.connections),
+    onLogs,
+    onMemory,
+    onTraffic,
+    onConnections,
   }
 })

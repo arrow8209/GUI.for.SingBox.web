@@ -1,6 +1,6 @@
 import { httpClient } from './http'
 
-import type { TrayContent } from '@/types/app'
+import type { TrayContent, MenuItem } from '@/types/app'
 
 export const RestartApp = async () => {
   return httpClient.post<{ flag: boolean; data: string }>('/restart').then((res) => {
@@ -17,6 +17,10 @@ export const ShowMainWindow = async () => {
   // No concept of native window in B/S mode.
 }
 
+export const UpdateTrayAndMenus = async (_tray: TrayContent, _menus: MenuItem[]) => {
+  // Tray + menus not supported in web mode.
+}
+
 export const UpdateTray = async (_tray: TrayContent) => {
   // Tray not supported in web mode.
 }
@@ -27,7 +31,8 @@ export const UpdateTrayMenus = async () => {
 
 export const GetEnv = () => httpClient.get<EnvResult>('/env')
 
-export const IsStartup = () => httpClient.get<{ startup: boolean }>('/startup').then((res) => res.startup)
+export const IsStartup = () =>
+  httpClient.get<{ startup: boolean }>('/startup').then((res) => res.startup)
 
 export const GetInterfaces = async () => {
   const { flag, data } = await httpClient.get<{ flag: boolean; data: string }>('/interfaces')

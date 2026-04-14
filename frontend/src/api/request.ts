@@ -14,7 +14,7 @@ type RequestOptions = {
   base?: string
   headers?: Record<string, string>
   timeout?: number
-  responseType?: keyof typeof ResponseType
+  responseType?: ResponseType
   beforeRequest?: () => void
 }
 

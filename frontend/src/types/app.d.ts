@@ -41,6 +41,8 @@ export interface AppSettings {
   lang: Lang | string
   theme: Theme
   color: Color
+  primaryColor: string
+  secondaryColor: string
   fontFamily: string
   profilesView: View
   subscribesView: View
@@ -94,6 +96,7 @@ export interface AppSettings {
   rollingRelease: boolean
   debugOutline: boolean
   debugNoAnimation: boolean
+  debugNoRounded: false
   debugBorder: boolean
   pages: string[]
 }
@@ -113,6 +116,7 @@ export interface PluginConfiguration {
     | 'Select'
     | 'MultipleSelect'
     | 'Switch'
+    | 'ColorPicker'
     | ''
   value: any
   options: any[]

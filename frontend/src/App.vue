@@ -161,12 +161,36 @@ watch(
       class="fixed right-32 bottom-32"
     >
       <Button
-        @click="handleRestartCore"
         v-tips="'home.overview.restart'"
         :loading="kernelApiStore.restarting"
         icon="restart"
         class="rounded-full w-42 h-42 shadow"
+        @click="handleRestartCore"
       />
     </div>
   </template>
+
+  <Modal
+    v-model:open="appStore.showAbout"
+    :cancel="false"
+    :submit="false"
+    mask-closable
+    min-width="50"
+  >
+    <AboutView />
+  </Modal>
+
+  <Menu
+    v-model="appStore.menuShow"
+    :position="appStore.menuPosition"
+    :menu-list="appStore.menuList"
+  />
+
+  <Tips
+    v-model="appStore.tipsShow"
+    :position="appStore.tipsPosition"
+    :message="appStore.tipsMessage"
+  />
+
+  <CommandView v-if="!loading" />
 </template>

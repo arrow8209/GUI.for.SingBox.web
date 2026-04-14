@@ -32,7 +32,7 @@ import {
   Branch,
 } from '@/enums/app'
 import i18n, { loadLocaleMessages, reloadLocale } from '@/lang'
-import { debounce, updateTrayMenus, ignoredError, sleep, GetSystemProxyBypass } from '@/utils'
+import { debounce, updateTrayAndMenus, ignoredError, sleep, GetSystemProxyBypass } from '@/utils'
 
 import { useEnvStore } from './env'
 
@@ -47,6 +47,8 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
     lang: Lang.EN,
     theme: Theme.Auto,
     color: Color.Default,
+    primaryColor: '#000',
+    secondaryColor: '#545454',
     fontFamily: DefaultFontFamily,
     profilesView: View.Grid,
     subscribesView: View.Grid,
@@ -91,6 +93,7 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
     rollingRelease: true,
     debugOutline: false,
     debugNoAnimation: false,
+    debugNoRounded: false,
     debugBorder: false,
     pages: ['Overview', 'Profiles', 'Subscriptions', 'Plugins'],
   })
@@ -177,13 +180,19 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
           ? Theme.Dark
           : Theme.Light
         : settings.theme
-    const { primary, secondary } = Colors[settings.color]
+    let primary, secondary
+    if (settings.color === Color.Custom) {
+      ;({ primaryColor: primary, secondaryColor: secondary } = settings)
+    } else {
+      ;({ primary, secondary } = Colors[settings.color] ?? { primary: '', secondary: '' })
+    }
     document.documentElement.style.setProperty('--primary-color', primary)
     document.documentElement.style.setProperty('--secondary-color', secondary)
     document.body.style.fontFamily = settings.fontFamily
-    document.body.setAttribute('debug-outline', String(settings.debugOutline))
-    document.body.setAttribute('debug-no-animation', String(settings.debugNoAnimation))
-    document.body.setAttribute('debug-border', String(settings.debugBorder))
+    document.body.setAttribute('feature-outline', String(settings.debugOutline))
+    document.body.setAttribute('feature-no-animation', String(settings.debugNoAnimation))
+    document.body.setAttribute('feature-no-rounded', String(settings.debugNoRounded))
+    document.body.setAttribute('feature-border', String(settings.debugBorder))
   }
 
   watch(
@@ -225,7 +234,7 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
       () => app.value.lang,
       () => app.value.addPluginToMenu,
     ],
-    updateTrayMenus,
+    updateTrayAndMenus,
   )
 
   watch(themeMode, setAppTheme, { immediate: true })

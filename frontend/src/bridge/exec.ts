@@ -4,6 +4,7 @@ import { EventsOn, EventsOff } from './events'
 import { httpClient } from './http'
 
 interface ExecOptions {
+  PidFile?: string
   Convert?: boolean
   Env?: Record<string, any>
   StopOutputKeyword?: string
@@ -13,6 +14,7 @@ interface ExecOptions {
 }
 
 const mergeExecOptions = (options: ExecOptions = {}) => ({
+  PidFile: options.PidFile ?? '',
   Convert: options.Convert ?? options.convert ?? false,
   Env: options.Env ?? options.env ?? {},
   StopOutputKeyword: options.StopOutputKeyword ?? options.stopOutputKeyword ?? '',

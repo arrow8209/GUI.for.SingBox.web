@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,13 +12,26 @@ import (
 	"time"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
+
+	"guiforcores/pkg/security"
 )
 
-func GetPath(path string) string {
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(Env.BasePath, path)
+// GetPath 把 relPath 拼到 Env.BasePath 下，但限制必须落在 data/ 子树内。
+// 拒绝绝对路径、`..` 越界、symlink 越狱以及 data/ 之外的子目录。
+// 安全失败时返回空串，调用方需检查并降级处理。
+func GetPath(relPath string) string {
+	sb := security.NewSandbox(Env.BasePath)
+	full, err := sb.Resolve(relPath)
+	if err != nil {
+		log.Printf("GetPath sandbox rejected %q: %v", relPath, err)
+		return ""
 	}
-	return filepath.ToSlash(filepath.Clean(path))
+	dataPath := filepath.Join(sb.Base(), "data")
+	if full != dataPath && !strings.HasPrefix(full, dataPath+string(filepath.Separator)) {
+		log.Printf("GetPath rejected %q: outside data/ subtree", relPath)
+		return ""
+	}
+	return filepath.ToSlash(full)
 }
 
 func GetProxy(_proxy string) func(*http.Request) (*url.URL, error) {

@@ -46,10 +46,13 @@ func (s *Sandbox) Resolve(rel string) (string, error) {
 		}
 	}
 	// 父目录如果存在也校验 symlink，避免路径不存在场景被绕过
-	if dir := filepath.Dir(full); dir != s.base {
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			if resolved != s.base && !strings.HasPrefix(resolved, s.base+string(filepath.Separator)) {
-				return "", ErrSandboxEscape
+	// full == s.base 时跳过，否则会校验到 base 的父目录（必然在 base 外）
+	if full != s.base {
+		if dir := filepath.Dir(full); dir != s.base {
+			if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+				if resolved != s.base && !strings.HasPrefix(resolved, s.base+string(filepath.Separator)) {
+					return "", ErrSandboxEscape
+				}
 			}
 		}
 	}

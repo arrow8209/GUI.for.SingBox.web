@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdh"
-	"crypto/rand"
 	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -32,6 +32,7 @@ import (
 
 	"guiforcores/bridge"
 	"guiforcores/pkg/eventbus"
+	"guiforcores/pkg/security"
 )
 
 //go:embed all:frontend/dist
@@ -43,54 +44,190 @@ var (
 )
 
 type Server struct {
-	app        *bridge.App
-	bus        *eventbus.Bus
-	httpServer *http.Server
-	staticFS   http.FileSystem
-	shutdown   chan struct{}
-	auth       *AuthConfig
-	sessions   map[string]time.Time
-	sessionTTL time.Duration
-	mu         sync.Mutex
+	app             *bridge.App
+	bus             *eventbus.Bus
+	httpServer      *http.Server
+	staticFS        http.FileSystem
+	shutdown        chan struct{}
+	auth            *AuthConfig
+	sessions        map[string]time.Time
+	csrfTokens      map[string]string // session token -> csrf token
+	sessionTTL      time.Duration
+	mu              sync.Mutex
+	cfg             SecurityConfig
+	loginRL         *security.RateLimiter
+	originChk       *security.OriginChecker
+	activeProfileID string
+	profileMu       sync.RWMutex
 }
 
 type AuthConfig struct {
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	Username           string    `yaml:"username"`
+	PasswordHash       string    `yaml:"password_hash"`
+	MustChangePassword bool      `yaml:"must_change_password"`
+	CreatedAt          time.Time `yaml:"created_at"`
 }
 
-func loadAuthConfig() *AuthConfig {
-	path := filepath.Join(bridge.Env.BasePath, "data", "auth.yaml")
-	cfg := &AuthConfig{
-		Username: "admin",
-		Password: "admin123",
+// SecurityConfig 公网部署安全相关 env 配置。
+type SecurityConfig struct {
+	BindAddr       string
+	AllowedOrigins []string
+	SecureCookie   bool
+	SessionTTL     time.Duration
+	AdminPassword  string
+}
+
+func loadSecurityConfig() SecurityConfig {
+	bind := os.Getenv("BIND")
+	if bind == "" {
+		if p := os.Getenv("PORT"); p != "" {
+			bind = "127.0.0.1:" + p
+		} else if a := os.Getenv("SERVER_ADDR"); a != "" {
+			bind = a
+		} else {
+			bind = "127.0.0.1:22345"
+		}
 	}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		writeAuthConfig(path, cfg)
+	origins := []string{"http://127.0.0.1:*", "http://localhost:*"}
+	if env := os.Getenv("ALLOWED_ORIGINS"); env != "" {
+		origins = nil
+		for _, o := range strings.Split(env, ",") {
+			origins = append(origins, strings.TrimSpace(o))
+		}
+	}
+	secure := true
+	if v := os.Getenv("SECURE_COOKIE"); v == "false" || v == "0" {
+		secure = false
+	}
+	ttl := 24 * time.Hour
+	if v := os.Getenv("SESSION_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			ttl = d
+		}
+	}
+	return SecurityConfig{
+		BindAddr:       bind,
+		AllowedOrigins: origins,
+		SecureCookie:   secure,
+		SessionTTL:     ttl,
+		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
+	}
+}
+
+// securityHeaders 在所有响应上设置基础安全 header。
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; "+
+				"style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// loadAuthConfig 加载或初始化管理员认证配置。
+// 优先级：env ADMIN_PASSWORD > 已存在 auth.yaml > 首次启动随机密码。
+// 旧明文 password 字段会自动迁移为 password_hash；默认弱口令 admin123 会被删除重生。
+func loadAuthConfig(adminPwdEnv string) *AuthConfig {
+	authDir := filepath.Join(bridge.Env.BasePath, "data")
+	authPath := filepath.Join(authDir, "auth.yaml")
+	initialPwdPath := filepath.Join(authDir, ".cache", "initial-password.txt")
+
+	if adminPwdEnv != "" {
+		hash, err := security.HashPassword(adminPwdEnv)
+		if err != nil {
+			log.Fatalf("hash ADMIN_PASSWORD: %v", err)
+		}
+		cfg := &AuthConfig{
+			Username:           "admin",
+			PasswordHash:       hash,
+			MustChangePassword: false,
+			CreatedAt:          time.Now().UTC(),
+		}
+		writeAuthConfig(authPath, cfg)
+		_ = os.Remove(initialPwdPath)
 		return cfg
 	}
-	data, err := os.ReadFile(path)
+
+	if _, err := os.Stat(authPath); errors.Is(err, os.ErrNotExist) {
+		pwd, err := security.GenerateRandomPassword()
+		if err != nil {
+			log.Fatalf("generate password: %v", err)
+		}
+		hash, err := security.HashPassword(pwd)
+		if err != nil {
+			log.Fatalf("hash password: %v", err)
+		}
+		cfg := &AuthConfig{
+			Username:           "admin",
+			PasswordHash:       hash,
+			MustChangePassword: true,
+			CreatedAt:          time.Now().UTC(),
+		}
+		writeAuthConfig(authPath, cfg)
+		_ = os.MkdirAll(filepath.Dir(initialPwdPath), 0700)
+		_ = os.WriteFile(initialPwdPath, []byte(pwd), 0600)
+		fmt.Fprintf(os.Stderr, "\n========================================\n")
+		fmt.Fprintf(os.Stderr, "Initial admin password: %s\n", pwd)
+		fmt.Fprintf(os.Stderr, "Username: admin\n")
+		fmt.Fprintf(os.Stderr, "Stored in: %s\n", initialPwdPath)
+		fmt.Fprintf(os.Stderr, "Login and change immediately.\n")
+		fmt.Fprintf(os.Stderr, "========================================\n\n")
+		return cfg
+	}
+
+	data, err := os.ReadFile(authPath)
 	if err != nil {
-		log.Fatalf("failed to read auth config: %v", err)
+		log.Fatalf("read auth config: %v", err)
 	}
+	cfg := &AuthConfig{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		log.Fatalf("failed to parse auth config: %v", err)
+		log.Fatalf("parse auth config: %v", err)
 	}
+	if cfg.PasswordHash != "" {
+		return cfg
+	}
+	// 旧格式（明文 password）→ 迁移
+	var legacy struct {
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	}
+	if err := yaml.Unmarshal(data, &legacy); err != nil || legacy.Password == "" {
+		log.Fatalf("auth.yaml format invalid; delete it and restart")
+	}
+	if legacy.Password == "admin123" {
+		log.Println("WARNING: detected default password 'admin123'; deleting and regenerating")
+		_ = os.Remove(authPath)
+		return loadAuthConfig(adminPwdEnv)
+	}
+	hash, err := security.HashPassword(legacy.Password)
+	if err != nil {
+		log.Fatalf("migrate hash: %v", err)
+	}
+	cfg.Username = legacy.Username
+	cfg.PasswordHash = hash
+	cfg.MustChangePassword = false
+	cfg.CreatedAt = time.Now().UTC()
+	writeAuthConfig(authPath, cfg)
+	log.Println("auth.yaml migrated from plain password to argon2id hash")
 	return cfg
 }
 
 func writeAuthConfig(path string, cfg *AuthConfig) {
-	if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
-		log.Printf("failed to create auth config directory: %v", err)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		log.Printf("create auth dir: %v", err)
 		return
 	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		log.Printf("failed to marshal auth config: %v", err)
+		log.Printf("marshal auth: %v", err)
 		return
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Printf("failed to write auth config: %v", err)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		log.Printf("write auth: %v", err)
 	}
 }
 
@@ -99,7 +236,8 @@ func NewServer(app *bridge.App, bus *eventbus.Bus) *Server {
 	if err != nil {
 		panic(err)
 	}
-	authCfg := loadAuthConfig()
+	cfg := loadSecurityConfig()
+	authCfg := loadAuthConfig(cfg.AdminPassword)
 
 	server := &Server{
 		app:        app,
@@ -108,7 +246,11 @@ func NewServer(app *bridge.App, bus *eventbus.Bus) *Server {
 		shutdown:   make(chan struct{}),
 		auth:       authCfg,
 		sessions:   make(map[string]time.Time),
-		sessionTTL: 24 * time.Hour,
+		csrfTokens: make(map[string]string),
+		sessionTTL: cfg.SessionTTL,
+		cfg:        cfg,
+		loginRL:    security.NewRateLimiter(5, time.Minute, 5*time.Minute),
+		originChk:  security.NewOriginChecker(cfg.AllowedOrigins),
 	}
 	app.Exit = server.Shutdown
 	return server
@@ -130,6 +272,7 @@ func (s *Server) Run(addr string) error {
 		api.Post("/login", s.handleLogin)
 		api.Group(func(private chi.Router) {
 			private.Use(s.authMiddleware)
+			private.Use(s.csrfMiddleware)
 			s.registerAppRoutes(private)
 			private.Route("/files", func(files chi.Router) {
 				s.registerFileRoutes(files)
@@ -145,7 +288,9 @@ func (s *Server) Run(addr string) error {
 			})
 			private.Route("/core", func(core chi.Router) {
 				core.HandleFunc("/*", s.handleCoreProxy)
+				core.Post("/select-profile", s.handleSelectProfile)
 			})
+			private.Post("/change-password", s.handleChangePassword)
 			private.Post("/logout", s.handleLogout)
 		})
 	})
@@ -156,8 +301,12 @@ func (s *Server) Run(addr string) error {
 	router.Handle("/", s.spaHandler())
 
 	s.httpServer = &http.Server{
-		Addr:    addr,
-		Handler: router,
+		Addr:              addr,
+		Handler:           securityHeaders(router),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
@@ -188,14 +337,7 @@ func main() {
 	app := bridge.NewApp(bus)
 	server := NewServer(app, bus)
 
-	addr := os.Getenv("SERVER_ADDR")
-	if addr == "" {
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "22345"
-		}
-		addr = ":" + port
-	}
+	addr := server.cfg.BindAddr
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -292,44 +434,181 @@ func (s *Server) registerAppRoutes(r chi.Router) {
 	})
 }
 
+// extractClientIP 从 X-Forwarded-For（反代场景）或 RemoteAddr 提取客户端 IP。
+func extractClientIP(r *http.Request) string {
+	if xf := r.Header.Get("X-Forwarded-For"); xf != "" {
+		if i := strings.Index(xf, ","); i > 0 {
+			return strings.TrimSpace(xf[:i])
+		}
+		return strings.TrimSpace(xf)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   s.cfg.SecureCookie,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(s.cfg.SessionTTL.Seconds()),
+	})
+}
+
+func (s *Server) clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   s.cfg.SecureCookie,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "csrf_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   s.cfg.SecureCookie,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	})
+}
+
+func (s *Server) setCSRFCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "csrf_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: false, // 前端 JS 需要读
+		Secure:   s.cfg.SecureCookie,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(s.cfg.SessionTTL.Seconds()),
+	})
+}
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	type payload struct {
+	clientIP := extractClientIP(r)
+	if !s.loginRL.Allow("ip:" + clientIP) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try later"})
+		return
+	}
+	var body struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	var body payload
 	if err := decodeJSON(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if body.Username != s.auth.Username || body.Password != s.auth.Password {
+	if !s.loginRL.Allow("user:" + body.Username) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try later"})
+		return
+	}
+	if body.Username != s.auth.Username || !security.VerifyPassword(body.Password, s.auth.PasswordHash) {
+		s.loginRL.RecordFailure("ip:" + clientIP)
+		s.loginRL.RecordFailure("user:" + body.Username)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	token := s.generateToken()
-	s.mu.Lock()
-	s.sessions[token] = time.Now().Add(s.sessionTTL)
-	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]string{"token": token})
-}
+	s.loginRL.RecordSuccess("ip:" + clientIP)
+	s.loginRL.RecordSuccess("user:" + body.Username)
 
-func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	token := getBearerToken(r.Header.Get("Authorization"))
-	if token == "" {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+	sessionToken, err := security.NewCSRFToken()
+	if err != nil {
+		writeJSONError(w, err)
+		return
+	}
+	csrfToken, err := security.NewCSRFToken()
+	if err != nil {
+		writeJSONError(w, err)
 		return
 	}
 	s.mu.Lock()
-	delete(s.sessions, token)
+	s.sessions[sessionToken] = time.Now().Add(s.cfg.SessionTTL)
+	s.csrfTokens[sessionToken] = csrfToken
 	s.mu.Unlock()
+
+	s.setSessionCookie(w, sessionToken)
+	s.setCSRFCookie(w, csrfToken)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"csrfToken":          csrfToken,
+		"mustChangePassword": s.auth.MustChangePassword,
+	})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("session"); err == nil {
+		s.mu.Lock()
+		delete(s.sessions, cookie.Value)
+		delete(s.csrfTokens, cookie.Value)
+		s.mu.Unlock()
+	}
+	s.clearSessionCookie(w)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		OldPassword string `json:"oldPassword"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeJSONError(w, err)
+		return
+	}
+	if !security.VerifyPassword(body.OldPassword, s.auth.PasswordHash) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "old password incorrect"})
+		return
+	}
+	if len(body.NewPassword) < 8 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "new password too short (min 8)"})
+		return
+	}
+	hash, err := security.HashPassword(body.NewPassword)
+	if err != nil {
+		writeJSONError(w, err)
+		return
+	}
+	s.auth.PasswordHash = hash
+	s.auth.MustChangePassword = false
+	authPath := filepath.Join(bridge.Env.BasePath, "data", "auth.yaml")
+	writeAuthConfig(authPath, s.auth)
+	_ = os.Remove(filepath.Join(bridge.Env.BasePath, "data", ".cache", "initial-password.txt"))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleSelectProfile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ProfileID string `json:"profileId"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeJSONError(w, err)
+		return
+	}
+	if body.ProfileID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "profileId required"})
+		return
+	}
+	s.profileMu.Lock()
+	s.activeProfileID = body.ProfileID
+	s.profileMu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := getBearerToken(r.Header.Get("Authorization"))
-		if token == "" && websocket.IsWebSocketUpgrade(r) {
-			token = r.URL.Query().Get("token")
+		var token string
+		if cookie, err := r.Cookie("session"); err == nil {
+			token = cookie.Value
 		}
 		if token == "" || !s.validateToken(token) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
@@ -339,12 +618,31 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) generateToken() string {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return hex.EncodeToString([]byte(time.Now().String()))
-	}
-	return hex.EncodeToString(buf)
+// csrfMiddleware 校验 CSRF 双提交：状态变更方法必须带 X-CSRF-Token 与 csrf_token cookie 一致。
+func (s *Server) csrfMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		// WebSocket upgrade 走 GET，但已在 authMiddleware 后；不需要 CSRF。
+		if websocket.IsWebSocketUpgrade(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		cookie, err := r.Cookie("csrf_token")
+		if err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing csrf cookie"})
+			return
+		}
+		header := r.Header.Get("X-CSRF-Token")
+		if !security.CompareCSRF(cookie.Value, header) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "csrf mismatch"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) validateToken(token string) bool {
@@ -356,26 +654,27 @@ func (s *Server) validateToken(token string) bool {
 	}
 	if time.Now().After(expiry) {
 		delete(s.sessions, token)
+		delete(s.csrfTokens, token)
 		return false
 	}
 	return true
 }
 
 func (s *Server) handleWebsocket(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
+	// Cookie 自动带 session；WS Origin 检查在 bus.ServeWS 内部 upgrader 处理。
+	var token string
+	if cookie, err := r.Cookie("session"); err == nil {
+		token = cookie.Value
+	}
 	if token == "" || !s.validateToken(token) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	s.bus.ServeWS(w, r)
-}
-
-func getBearerToken(header string) string {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(header, prefix) {
-		return ""
+	if !s.originChk.Allow(r.Header.Get("Origin")) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
 	}
-	return strings.TrimSpace(header[len(prefix):])
+	s.bus.ServeWS(w, r)
 }
 
 func (s *Server) registerFileRoutes(r chi.Router) {
@@ -682,14 +981,22 @@ func (s *Server) registerMMDBRoutes(r chi.Router) {
 	})
 }
 
+// handleCoreProxy 把 /api/core/* 请求代理到激活 profile 配置的 sing-box clash_api。
+// bearer 与 base 来自服务端读 data/profiles.yaml，前端不再透传。
 func (s *Server) handleCoreProxy(w http.ResponseWriter, r *http.Request) {
-	coreBase := r.Header.Get("X-Core-Base")
-	if coreBase == "" {
-		coreBase = r.URL.Query().Get("coreBase")
-	}
-	if coreBase == "" {
-		http.Error(w, "missing core base", http.StatusBadRequest)
+	profile, err := s.readActiveProfile()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	coreBase := profile.Experimental.ClashAPI.ExternalController
+	bearer := profile.Experimental.ClashAPI.Secret
+	if coreBase == "" {
+		http.Error(w, "core base not configured in active profile", http.StatusBadRequest)
+		return
+	}
+	if !strings.HasPrefix(coreBase, "http") {
+		coreBase = "http://" + coreBase
 	}
 	baseURL, err := url.Parse(coreBase)
 	if err != nil {
@@ -704,21 +1011,48 @@ func (s *Server) handleCoreProxy(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(pathParam, "/") {
 		pathParam = "/" + pathParam
 	}
-	query := r.URL.Query()
-	query.Del("coreBase")
-	query.Del("coreBearer")
-	query.Del("token")
-	rel := &url.URL{Path: pathParam, RawQuery: query.Encode()}
+	rel := &url.URL{Path: pathParam, RawQuery: r.URL.RawQuery}
 	targetURL := baseURL.ResolveReference(rel)
-	bearer := r.Header.Get("X-Core-Bearer")
-	if bearer == "" {
-		bearer = r.URL.Query().Get("coreBearer")
-	}
 	if websocket.IsWebSocketUpgrade(r) {
 		s.proxyCoreWebsocket(w, r, targetURL, bearer)
 		return
 	}
 	s.proxyCoreHTTP(w, r, targetURL, bearer)
+}
+
+// miniProfile 仅解析 profiles.yaml 中需要的字段。
+type miniProfile struct {
+	ID           string `yaml:"id"`
+	Experimental struct {
+		ClashAPI struct {
+			ExternalController string `yaml:"external_controller"`
+			Secret             string `yaml:"secret"`
+		} `yaml:"clash_api"`
+	} `yaml:"experimental"`
+}
+
+func (s *Server) readActiveProfile() (*miniProfile, error) {
+	s.profileMu.RLock()
+	id := s.activeProfileID
+	s.profileMu.RUnlock()
+	if id == "" {
+		return nil, errors.New("no active profile selected; call /api/core/select-profile first")
+	}
+	path := filepath.Join(bridge.Env.BasePath, "data", "profiles.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var profiles []miniProfile
+	if err := yaml.Unmarshal(data, &profiles); err != nil {
+		return nil, err
+	}
+	for i := range profiles {
+		if profiles[i].ID == id {
+			return &profiles[i], nil
+		}
+	}
+	return nil, fmt.Errorf("profile %s not found", id)
 }
 
 func (s *Server) proxyCoreHTTP(w http.ResponseWriter, r *http.Request, target *url.URL, bearer string) {
@@ -772,7 +1106,9 @@ func (s *Server) proxyCoreWebsocket(w http.ResponseWriter, r *http.Request, targ
 		http.Error(w, message, status)
 		return
 	}
-	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	upgrader := websocket.Upgrader{CheckOrigin: func(req *http.Request) bool {
+		return s.originChk.Allow(req.Header.Get("Origin"))
+	}}
 	clientConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		backendConn.Close()

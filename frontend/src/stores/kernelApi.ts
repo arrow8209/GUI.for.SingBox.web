@@ -11,6 +11,7 @@ import {
   onTraffic,
   initWebsocket,
   destroyWebsocket,
+  selectProfile,
 } from '@/api/kernel'
 import { ProcessInfo, KillProcess, ExecBackground, ReadFile, WriteFile, RemoveFile } from '@/bridge'
 import {
@@ -311,6 +312,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     coreStateLoading.value = false
 
     if (running.value) {
+      await selectProfile(appSettingsStore.app.kernel.profile).catch(() => {})
       initWebsocket()
       await Promise.all([refreshConfig(), refreshProviderProxies()])
       await envStore.updateSystemProxyStatus()
@@ -352,6 +354,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     isCoreStartedByThisInstance = true
     coreStoppedPromise = new Promise((r) => (coreStoppedResolver = r))
 
+    await selectProfile(appSettingsStore.app.kernel.profile).catch(() => {})
     initWebsocket()
     await Promise.all([refreshConfig(), refreshProviderProxies()])
 

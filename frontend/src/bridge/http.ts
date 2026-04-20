@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/stores/auth'
+import { getStoredCsrf, useAuthStore } from '@/stores/auth'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -10,17 +10,22 @@ type RequestOptions = {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}) {
-  const authStore = useAuthStore()
+  const method = options.method || 'GET'
   const init: RequestInit = {
-    method: options.method || 'GET',
+    method,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
     },
   }
 
-  if (!options.skipAuth && authStore.token) {
-    ;(init.headers as Record<string, string>).Authorization = `Bearer ${authStore.token}`
+  // CSRF: 状态变更方法必须带 token
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrf = getStoredCsrf()
+    if (csrf) {
+      ;(init.headers as Record<string, string>)['X-CSRF-Token'] = csrf
+    }
   }
 
   if (options.body !== undefined) {
@@ -33,6 +38,7 @@ async function request<T>(path: string, options: RequestOptions = {}) {
 
   if (!res.ok) {
     if (res.status === 401) {
+      const authStore = useAuthStore()
       authStore.forceLogout()
     }
     const message = typeof payload === 'string' ? payload : payload?.error || 'Request failed'

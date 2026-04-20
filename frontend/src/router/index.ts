@@ -1,5 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 
+import { getStoredCsrf } from '@/stores/auth'
+
 import routes from './routes'
 
 const router = createRouter({
@@ -8,12 +10,13 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
-  const token = localStorage.getItem('auth_token')
-  if (!to.meta.public && !token) {
+  // 用 CSRF token 是否存在判断登录态（cookie 是 HttpOnly JS 看不到，CSRF cookie 同生命周期可读）
+  const authed = !!getStoredCsrf()
+  if (!to.meta.public && !authed) {
     next({ path: '/login', query: { redirect: to.fullPath } })
     return
   }
-  if (to.path === '/login' && token) {
+  if (to.path === '/login' && authed) {
     next({ path: '/' })
     return
   }

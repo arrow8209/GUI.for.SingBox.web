@@ -14,11 +14,10 @@ const apiBaseURL = import.meta.env.VITE_API_BASE || '/api'
 const apiUrl = new URL(apiBaseURL, window.location.origin)
 const BASE_WS_URL = `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}/ws`
 
+// Cookie 自动带 session；URL 不再含 token query。
 const getWsUrl = () => {
-  const token = useAuthStore().token
-  if (!token) return ''
-  const query = `?token=${encodeURIComponent(token)}`
-  return `${BASE_WS_URL}${query}`
+  if (!useAuthStore().isAuthenticated) return ''
+  return BASE_WS_URL
 }
 
 function connect() {

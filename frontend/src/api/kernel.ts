@@ -1,7 +1,6 @@
 import { Request } from '@/api/request'
 import { WebSockets } from '@/api/websocket'
 import { apiBaseURL } from '@/bridge/http'
-import { useAppSettingsStore, useAuthStore, useProfilesStore } from '@/stores'
 
 import type {
   CoreApiConfig,
@@ -20,11 +19,6 @@ export enum Api {
   Logs = '/logs',
 }
 
-type CoreConnectionOptions = {
-  coreBase: string
-  coreBearer: string
-}
-
 type WsKey = keyof CoreApiWsDataMap
 type WsChannel<K extends WsKey> = {
   url: string
@@ -35,24 +29,20 @@ type WsChannel<K extends WsKey> = {
   disconnect?: () => void
 }
 
+// HTTP/WS 都走本地 Core Proxy；bearer 由服务端从 active profile 读取，
+// 前端不再传 X-Core-Bearer / token。Cookie 自动带 session。
 const setupKernelApi = () => {
-  const { coreBase, coreBearer } = resolveCoreConnection()
   request.base = getCoreProxyBase()
-  request.headers = {
-    'X-Core-Base': coreBase,
-    ...(coreBearer ? { 'X-Core-Bearer': coreBearer } : {}),
-  }
 }
 
 const setupKernelWs = () => {
-  const { coreBase, coreBearer } = resolveCoreConnection()
-  const authStore = useAuthStore()
   websocket.base = getCoreProxyBase().replace(/^http/, 'ws')
-  const params: Record<string, string> = { coreBase }
-  if (coreBearer) params.coreBearer = coreBearer
-  if (authStore.token) params.token = authStore.token
-  websocket.params = params
+  websocket.params = {}
 }
+
+// selectProfile 在切换 profile 时调用，让服务端持有 bearer。
+export const selectProfile = (profileId: string) =>
+  request.post<{ status: string }>('/select-profile', { profileId })
 
 const request = new Request({ beforeRequest: setupKernelApi, timeout: 60 * 1000 })
 const websocket = new WebSockets({ beforeConnect: setupKernelWs })
@@ -135,37 +125,10 @@ export const destroyWebsocket = () => {
   })
 }
 
-export const resolveCoreConnection = (): CoreConnectionOptions => {
-  const appSettingsStore = useAppSettingsStore()
-  const profilesStore = useProfilesStore()
-  const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
-  const controller = (
-    profile?.experimental.clash_api.external_controller || '127.0.0.1:20123'
-  ).trim()
-  let normalized = controller
-  if (!normalized.includes('://')) {
-    normalized = `http://${normalized}`
-  }
-  let coreBase = 'http://127.0.0.1:20123'
-  try {
-    const url = new URL(normalized)
-    let host = url.hostname || '127.0.0.1'
-    if (host === '0.0.0.0') host = '127.0.0.1'
-    if (host === '' || host === '*') host = '127.0.0.1'
-    if (host === '::') host = '::1'
-    if (!host.startsWith('127.') && host !== '::1' && host !== 'localhost') {
-      host = '127.0.0.1'
-    }
-    const port = url.port || '20123'
-    const protocol = url.protocol === 'https:' ? 'https' : 'http'
-    coreBase = `${protocol}://${host}:${port}`
-  } catch (error) {
-    console.error('[kernelApi] failed to parse controller address, fallback to loopback', error)
-  }
-  return {
-    coreBase,
-    coreBearer: profile?.experimental.clash_api.secret || '',
-  }
+// resolveCoreConnection 已废弃：bearer/coreBase 由服务端从 active profile 读取。
+// 仅保留导出名以避免破坏现有 import；返回空值。
+export const resolveCoreConnection = (): { coreBase: string; coreBearer: string } => {
+  return { coreBase: '', coreBearer: '' }
 }
 
 export const getCoreProxyBase = () => {

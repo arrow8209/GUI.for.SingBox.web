@@ -1,6 +1,6 @@
 import { parse } from 'yaml'
 
-import { useAuthStore } from '@/stores/auth'
+import { getStoredCsrf, useAuthStore } from '@/stores/auth'
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
@@ -44,6 +44,7 @@ export class Request {
     const init: RequestInit = {
       method: options.method,
       signal: controller.signal,
+      credentials: 'include',
       headers: { ...this.headers },
     }
 
@@ -51,10 +52,13 @@ export class Request {
       url = this.base + url
     }
 
-    const authStore = useAuthStore()
-    if (authStore.token) {
-      if (!init.headers) init.headers = {}
-      Object.assign(init.headers, { Authorization: `Bearer ${authStore.token}` })
+    // CSRF: 状态变更方法必须带 token
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(options.method)) {
+      const csrf = getStoredCsrf()
+      if (csrf) {
+        if (!init.headers) init.headers = {}
+        Object.assign(init.headers, { 'X-CSRF-Token': csrf })
+      }
     }
 
     if (['GET'].includes(options.method)) {
@@ -78,7 +82,13 @@ export class Request {
       return null as T
     }
 
-    if ([504, 401, 503].includes(res.status)) {
+    if (res.status === 401) {
+      const authStore = useAuthStore()
+      authStore.forceLogout()
+      const body = await res.json().catch(() => ({ error: 'unauthorized' }))
+      throw body.error || body.message || 'unauthorized'
+    }
+    if ([504, 503].includes(res.status)) {
       const { message } = await res.json()
       throw message
     }

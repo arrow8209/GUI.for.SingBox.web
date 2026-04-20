@@ -1,5 +1,6 @@
 import { type RouteRecordRaw } from 'vue-router'
 
+import ChangePasswordView from '@/views/ChangePasswordView.vue'
 import HomeView from '@/views/HomeView/index.vue'
 import LoginView from '@/views/LoginView.vue'
 import PluginsView from '@/views/PluginsView/index.vue'
@@ -15,6 +16,12 @@ const routes: RouteRecordRaw[] = [
     name: 'Login',
     component: LoginView,
     meta: { name: 'router.login', icon: 'settings2', hidden: true, public: true },
+  },
+  {
+    path: '/change-password',
+    name: 'ChangePassword',
+    component: ChangePasswordView,
+    meta: { name: 'router.changePassword', icon: 'settings2', hidden: true },
   },
   {
     path: '/',

@@ -42,7 +42,7 @@ const handleSubmit = async () => {
           @submit="handleSubmit"
         />
       </div>
-      <Button type="primary" :loading="authStore.loading" @click="handleSubmit" block>
+      <Button type="primary" :loading="authStore.loading" block @click="handleSubmit">
         登录
       </Button>
       <div v-if="authStore.error" class="error">{{ authStore.error }}</div>

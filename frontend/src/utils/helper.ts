@@ -1,6 +1,17 @@
 import { deleteConnection, getConnections, useProxy } from '@/api/kernel'
-import { AbsolutePath, Exec, ExitApp, ReadFile, WriteFile } from '@/bridge'
+import {
+  AbsolutePath,
+  Exec,
+  ExitApp,
+  FileExists,
+  GetEnv,
+  ReadFile,
+  RemoveFile,
+  WindowReloadApp,
+  WriteFile,
+} from '@/bridge'
 import { CoreWorkingDirectory } from '@/constant/kernel'
+import { OS } from '@/enums/app'
 import { RulesetFormat } from '@/enums/kernel'
 import i18n from '@/lang'
 import {
@@ -12,17 +23,17 @@ import {
   usePluginsStore,
   useRulesetsStore,
 } from '@/stores'
-import { ignoredError, message, confirm } from '@/utils'
+import { ignoredError, message, confirm, APP_TITLE, getAutoStartConfiguration } from '@/utils'
 
 // Permissions Helper
 export const SwitchPermissions = async (enable: boolean) => {
-  const { basePath, appName } = useEnvStore().env
+  const { appPath } = useEnvStore().env
   const args = enable
     ? [
         'add',
         'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers',
         '/v',
-        basePath + '\\' + appName,
+        appPath,
         '/t',
         'REG_SZ',
         '/d',
@@ -33,14 +44,14 @@ export const SwitchPermissions = async (enable: boolean) => {
         'delete',
         'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers',
         '/v',
-        basePath + '\\' + appName,
+        appPath,
         '/f',
       ]
   await Exec('reg', args, { Convert: true })
 }
 
 export const CheckPermissions = async () => {
-  const { basePath, appName } = useEnvStore().env
+  const { appPath } = useEnvStore().env
   try {
     const out = await Exec(
       'reg',
@@ -48,7 +59,7 @@ export const CheckPermissions = async () => {
         'query',
         'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers',
         '/v',
-        basePath + '\\' + appName,
+        appPath,
         '/t',
         'REG_SZ',
       ],
@@ -63,17 +74,61 @@ export const CheckPermissions = async () => {
 export const GrantTUNPermission = async (path: string) => {
   const { os } = useEnvStore().env
   const absPath = await AbsolutePath(path)
-  if (os === 'darwin') {
-    const osaScript = `chown root:admin ${absPath}\nchmod +sx ${absPath}`
-    const bashScript = `osascript -e 'do shell script "${osaScript}" with administrator privileges'`
-    await Exec('bash', ['-c', bashScript])
-  } else if (os === 'linux') {
+  if (os === OS.Darwin) {
+    const command = `chown root:admin "${absPath}"; chmod +sx "${absPath}"`
+    await RunWithOsaScript(command, [], { admin: true, wait: true })
+  } else if (os === OS.Linux) {
     await Exec('pkexec', [
       'setcap',
       'cap_net_bind_service,cap_net_admin,cap_dac_override=+ep',
       absPath,
     ])
   }
+}
+
+export const RunWithOsaScript = async (
+  path: string,
+  args: string[] = [],
+  options: { admin?: boolean; wait?: boolean } = {},
+) => {
+  const { admin = false, wait = true, ...others } = options
+  const escapedArgs = args.map((arg) => `'${arg.replace(/'/g, "'\\''")}'`).join(' ')
+  let shellCmd = `${path} ${escapedArgs}`.trim()
+  if (!wait) {
+    shellCmd += ' > /dev/null 2>&1 &'
+  }
+  const escapedShellCmd = shellCmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  let appleScript = `do shell script "${escapedShellCmd}"`
+  if (admin) {
+    appleScript += ' with administrator privileges'
+  }
+  const osaArgs = ['-e', appleScript]
+  return await Exec('osascript', osaArgs, others)
+}
+
+export const RunWithPowerShell = async (
+  path: string,
+  args: string[] = [],
+  options: { admin?: boolean; hidden?: boolean; wait?: boolean } = {},
+) => {
+  const { admin = false, hidden = false, wait = true, ...others } = options
+  const psArgs: string[] = []
+  let command = `Start-Process -FilePath "${path}"`
+  if (args.length > 0) {
+    const argList = args.map((a) => `"${a.replace(/"/g, '""')}"`).join(',')
+    command += ` -ArgumentList ${argList}`
+  }
+  if (admin) {
+    command += ' -Verb RunAs'
+  }
+  if (hidden) {
+    command += ' -WindowStyle Hidden'
+  }
+  if (wait) {
+    command += ' -Wait'
+  }
+  psArgs.push('-NoProfile', '-Command', command)
+  return await Exec('powershell', psArgs, { Convert: true, ...others })
 }
 
 // SystemProxy Helper
@@ -212,7 +267,7 @@ async function setLinuxSystemProxy(
   const httpEnabled = enabled && ['mixed', 'http'].includes(proxyType)
   const socksEnabled = enabled && ['mixed', 'socks'].includes(proxyType)
 
-  const desktop = (await Exec('sh', ['-c', 'echo $XDG_CURRENT_DESKTOP'])).trim()
+  const desktop = await GetEnv('XDG_CURRENT_DESKTOP')
   if (desktop.includes('KDE')) {
     const p1 = ignoredError(Exec, 'kwriteconfig5', [
       '--file',
@@ -325,26 +380,34 @@ async function setLinuxSystemProxy(
 export const GetSystemProxy = async () => {
   const { os } = useEnvStore().env
   try {
-    if (os === 'windows') {
-      const out1 = await Exec('reg', [
-        'query',
-        'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings',
-        '/v',
-        'ProxyEnable',
-        '/t',
-        'REG_DWORD',
-      ])
+    if (os === OS.Windows) {
+      const out1 = await Exec(
+        'reg',
+        [
+          'query',
+          'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings',
+          '/v',
+          'ProxyEnable',
+          '/t',
+          'REG_DWORD',
+        ],
+        { Convert: true },
+      )
 
       if (/REG_DWORD\s+0x0/.test(out1)) return ''
 
-      const out2 = await Exec('reg', [
-        'query',
-        'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings',
-        '/v',
-        'ProxyServer',
-        '/t',
-        'REG_SZ',
-      ])
+      const out2 = await Exec(
+        'reg',
+        [
+          'query',
+          'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings',
+          '/v',
+          'ProxyServer',
+          '/t',
+          'REG_SZ',
+        ],
+        { Convert: true },
+      )
 
       const regex = /ProxyServer\s+REG_SZ\s+(\S+)/
       const match = out2.match(regex)
@@ -352,7 +415,7 @@ export const GetSystemProxy = async () => {
       return match ? (match?.[1]?.startsWith('socks') ? match[1] : 'http://' + match[1]) : ''
     }
 
-    if (os === 'darwin') {
+    if (os === OS.Darwin) {
       const out = await Exec('scutil', ['--proxy'])
       const regex =
         /(?:HTTPEnable|HTTPPort|HTTPProxy|SOCKSEnable|SOCKSPort|SOCKSProxy)\s*:\s*([^}\n]+)/g
@@ -376,8 +439,8 @@ export const GetSystemProxy = async () => {
       return ''
     }
 
-    if (os === 'linux') {
-      const desktop = (await Exec('sh', ['-c', 'echo $XDG_CURRENT_DESKTOP'])).trim()
+    if (os === OS.Linux) {
+      const desktop = await GetEnv('XDG_CURRENT_DESKTOP')
       if (desktop.includes('KDE')) {
         const out = await Exec('kreadconfig5', [
           '--file',
@@ -447,7 +510,7 @@ export const GetSystemProxy = async () => {
 export const GetSystemProxyBypass = async () => {
   const { os } = useEnvStore().env
 
-  if (os === 'windows') {
+  if (os === OS.Windows) {
     const out = await ignoredError(Exec, 'reg', [
       'query',
       'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings',
@@ -458,7 +521,7 @@ export const GetSystemProxyBypass = async () => {
     return out.match(/ProxyOverride\s+REG_SZ\s+(\S+)/)?.[1] || ''
   }
 
-  if (os === 'darwin') {
+  if (os === OS.Darwin) {
     async function _get(device: string) {
       const out = await ignoredError(Exec, 'networksetup', ['-getproxybypassdomains', device])
       if (!out) return []
@@ -468,8 +531,8 @@ export const GetSystemProxyBypass = async () => {
     return res.flat().join(';')
   }
 
-  if (os === 'linux') {
-    const desktop = (await Exec('sh', ['-c', 'echo $XDG_CURRENT_DESKTOP'])).trim()
+  if (os === OS.Linux) {
+    const desktop = await GetEnv('XDG_CURRENT_DESKTOP')
     if (desktop.includes('KDE')) {
       const out = await ignoredError(Exec, 'kreadconfig5', [
         '--file',
@@ -528,16 +591,68 @@ export const GetSystemOrKernelProxy = async () => {
   return proxy_cache.proxyPromise
 }
 
-export const QuerySchTask = async (taskName: string) => {
-  await Exec('Schtasks', ['/Query', '/TN', taskName, '/XML'], { Convert: true })
+// Auto-start
+const getPlistPath = async () => {
+  const home = await GetEnv('HOME')
+  return `${home}/Library/LaunchAgents/${APP_TITLE}.plist`
 }
 
-export const CreateSchTask = async (taskName: string, xmlPath: string) => {
-  await Exec('SchTasks', ['/Create', '/F', '/TN', taskName, '/XML', xmlPath], { Convert: true })
+const getDesktopPath = async () => {
+  const home = await GetEnv('HOME')
+  return `${home}/.config/autostart/${APP_TITLE}.desktop`
 }
 
-export const DeleteSchTask = async (taskName: string) => {
-  await Exec('SchTasks', ['/Delete', '/F', '/TN', taskName], { Convert: true })
+export const IsAutoStartEnabled = async () => {
+  const { os } = useEnvStore().env
+  let isAutoStart = false
+  if (os === OS.Windows) {
+    isAutoStart = await Exec('Schtasks', ['/Query', '/TN', APP_TITLE, '/XML'], { Convert: true })
+      .then(() => true)
+      .catch(() => false)
+  } else if (os === OS.Darwin) {
+    const plistPath = await getPlistPath()
+    isAutoStart = await FileExists(plistPath)
+  } else if (os === OS.Linux) {
+    const desktopPath = await getDesktopPath()
+    isAutoStart = await FileExists(desktopPath)
+  }
+  return isAutoStart
+}
+
+export const EnableAutoStart = async (delay = 10) => {
+  const { os, appPath, isPrivileged } = useEnvStore().env
+  const configuration = getAutoStartConfiguration(os, appPath, delay)
+  if (os === OS.Windows) {
+    const xmlPath = await AbsolutePath('data/.cache/tasksch.xml')
+    await WriteFile(xmlPath, configuration)
+    const fn = isPrivileged ? Exec : RunWithPowerShell
+    await fn('SchTasks', ['/Create', '/F', '/TN', APP_TITLE, '/XML', xmlPath], {
+      admin: true,
+      hidden: true,
+    })
+  } else if (os === OS.Darwin) {
+    const plistPath = await getPlistPath()
+    await WriteFile(plistPath, configuration)
+    await Exec('launchctl', ['load', plistPath])
+  } else if (os === OS.Linux) {
+    const desktopPath = await getDesktopPath()
+    await WriteFile(desktopPath, configuration)
+  }
+}
+
+export const DisableAutoStart = async () => {
+  const { os, isPrivileged } = useEnvStore().env
+  if (os === OS.Windows) {
+    const fn = isPrivileged ? Exec : RunWithPowerShell
+    await fn('SchTasks', ['/Delete', '/F', '/TN', APP_TITLE], { admin: true, hidden: true })
+  } else if (os === OS.Darwin) {
+    const plistPath = await getPlistPath()
+    await Exec('launchctl', ['unload', plistPath])
+    await RemoveFile(plistPath)
+  } else if (os === OS.Linux) {
+    const desktopPath = await getDesktopPath()
+    await RemoveFile(desktopPath)
+  }
 }
 
 // Others
@@ -616,6 +731,38 @@ export const addToRuleSet = async (
   await rulesetsStoe.updateRuleset(id)
 }
 
+export const reloadApp = async () => {
+  const { t } = i18n.global
+  const appStore = useAppStore()
+  const pluginsStore = usePluginsStore()
+
+  appStore.isAppReloading = true
+
+  let timedout = false
+  const { destroy } = message.info('titlebar.reloadPending', 10 * 60 * 1000)
+
+  const timeoutId = setTimeout(async () => {
+    timedout = true
+    appStore.isAppReloading = false
+    destroy()
+    confirm('Warning', t('titlebar.reloadTimeout')).then(WindowReloadApp)
+  }, 10_000)
+
+  try {
+    await pluginsStore.onReloadTrigger()
+    if (!timedout) {
+      clearTimeout(timeoutId)
+      WindowReloadApp()
+    }
+  } catch (err: any) {
+    clearTimeout(timeoutId)
+    confirm('Error', t('titlebar.reloadError', { reason: err })).then(WindowReloadApp)
+  }
+
+  appStore.isAppReloading = false
+  destroy()
+}
+
 export const exitApp = async () => {
   const { t } = i18n.global
   const appStore = useAppStore()
@@ -627,13 +774,13 @@ export const exitApp = async () => {
   appStore.isAppExiting = true
 
   let timedout = false
-  const { destroy } = message.info('titlebar.waiting', 10 * 60 * 1000)
+  const { destroy } = message.info('titlebar.exitPending', 10 * 60 * 1000)
 
   const timeoutId = setTimeout(async () => {
     timedout = true
     appStore.isAppExiting = false
     destroy()
-    confirm('Warning', t('titlebar.timeout')).then(ExitApp)
+    confirm('Warning', t('titlebar.exitTimeout')).then(ExitApp)
   }, 10_000)
 
   try {

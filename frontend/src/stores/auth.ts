@@ -1,8 +1,8 @@
-import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
 
-import router from '@/router'
 import { closeEvents } from '@/bridge/events'
+import router from '@/router'
 
 const TOKEN_KEY = 'auth_token'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'

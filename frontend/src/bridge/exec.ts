@@ -1,20 +1,25 @@
-import { httpClient } from './http'
-import { EventsOn, EventsOff } from './events'
 import { sampleID } from '@/utils'
 
+import { EventsOn, EventsOff } from './events'
+import { httpClient } from './http'
+
 interface ExecOptions {
+  PidFile?: string
   Convert?: boolean
   Env?: Record<string, any>
   StopOutputKeyword?: string
+  WorkingDirectory?: string
   convert?: boolean
   env?: Record<string, any>
   stopOutputKeyword?: string
 }
 
 const mergeExecOptions = (options: ExecOptions = {}) => ({
+  PidFile: options.PidFile ?? '',
   Convert: options.Convert ?? options.convert ?? false,
   Env: options.Env ?? options.env ?? {},
   StopOutputKeyword: options.StopOutputKeyword ?? options.stopOutputKeyword ?? '',
+  WorkingDirectory: options.WorkingDirectory ?? '',
 })
 
 const assertFlag = (res: { flag: boolean; data: string }) => {

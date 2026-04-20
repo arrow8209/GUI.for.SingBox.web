@@ -5,6 +5,14 @@ export const BrowserOpenURL = (url: string) => {
   window.open(url, '_blank', 'noopener')
 }
 
+export const ClipboardGetText = async (): Promise<string> => {
+  try {
+    return await navigator.clipboard.readText()
+  } catch {
+    return ''
+  }
+}
+
 export const ClipboardSetText = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text)

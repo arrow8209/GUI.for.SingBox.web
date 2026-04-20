@@ -12,11 +12,11 @@ import { debounce, formatRelativeTime, ignoredError, formatDate, message } from 
 
 import { useModal } from '@/components/Modal'
 
+import type { Menu } from '@/types/app'
+
 import RulesetForm from './components/RulesetForm.vue'
 import RulesetHub from './components/RulesetHub.vue'
 import RulesetView from './components/RulesetView.vue'
-
-import type { Menu } from '@/types/app'
 
 const sourceMenuList: Menu[] = [
   {
@@ -151,10 +151,10 @@ const onSortUpdate = debounce(rulesetsStore.saveRulesets, 1000)
       <template #description>
         <I18nT keypath="rulesets.empty" tag="div" scope="global" class="flex items-center mt-12">
           <template #action>
-            <Button @click="handleShowRulesetForm()" type="link">{{ t('common.add') }}</Button>
+            <Button type="link" @click="handleShowRulesetForm()">{{ t('common.add') }}</Button>
           </template>
           <template #import>
-            <Button @click="handleImportRuleset" type="link">{{ t('rulesets.hub') }}</Button>
+            <Button type="link" @click="handleImportRuleset">{{ t('rulesets.hub') }}</Button>
           </template>
         </I18nT>
       </template>
@@ -163,17 +163,17 @@ const onSortUpdate = debounce(rulesetsStore.saveRulesets, 1000)
 
   <div v-else class="grid-list-header">
     <Radio v-model="appSettingsStore.app.rulesetsView" :options="ViewOptions" class="mr-auto" />
-    <Button @click="handleImportRuleset" type="link">
+    <Button type="link" @click="handleImportRuleset">
       {{ t('rulesets.hub') }}
     </Button>
     <Button
-      @click="handleUpdateRulesets"
       :disabled="noUpdateNeeded"
       :type="noUpdateNeeded ? 'text' : 'link'"
+      @click="handleUpdateRulesets"
     >
       {{ t('common.updateAll') }}
     </Button>
-    <Button @click="handleShowRulesetForm()" type="primary" icon="add" class="ml-16">
+    <Button type="primary" icon="add" class="ml-16" @click="handleShowRulesetForm()">
       {{ t('common.add') }}
     </Button>
   </div>
@@ -185,13 +185,13 @@ const onSortUpdate = debounce(rulesetsStore.saveRulesets, 1000)
     <Card
       v-for="r in rulesetsStore.rulesets"
       :key="r.id"
+      v-menu="generateMenus(r)"
       :title="r.tag"
       :disabled="r.disabled"
-      v-menu="generateMenus(r)"
       class="grid-list-item"
     >
       <template #title-prefix>
-        <Tag v-if="r.updating" color="cyan">
+        <Tag v-if="r.updating" color="cyan" size="small">
           {{ t('ruleset.updating') }}
         </Tag>
       </template>

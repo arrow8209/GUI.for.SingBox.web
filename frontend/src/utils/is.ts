@@ -1,12 +1,19 @@
+import { Cron } from 'croner'
 import { parse } from 'yaml'
+
+import { normalizeBase64 } from './others'
 
 export const isValidBase64 = (str: string) => {
   if (typeof str !== 'string') return false
   if (str === '' || str.trim() === '') {
     return false
   }
+
+  // Accept URL-safe base64 and ignore line breaks/spaces in subscription responses.
+  const normalized = normalizeBase64(str)
   try {
-    return btoa(atob(str)) == str
+    atob(normalized)
+    return true
   } catch {
     return false
   }
@@ -67,3 +74,12 @@ export const isValidJson = (str: string) => {
 }
 
 export const isNumber = (v: any) => typeof v === 'number'
+
+export const isValidCron = (pattern: string) => {
+  try {
+    const instance = new Cron(pattern, { paused: true })
+    return { ok: true, reason: null, instance: instance }
+  } catch (error: any) {
+    return { ok: false, reason: error.message || error, instance: null }
+  }
+}

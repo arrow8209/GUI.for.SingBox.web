@@ -17,7 +17,7 @@ import {
   OpenDir,
 } from '@/bridge'
 import { CoreWorkingDirectory } from '@/constant/kernel'
-import { Branch } from '@/enums/app'
+import { Branch, OS } from '@/enums/app'
 import { useAppSettingsStore, useEnvStore, useKernelApiStore } from '@/stores'
 import {
   getGitHubApiAuthorization,
@@ -31,7 +31,7 @@ import {
 } from '@/utils'
 
 const StableUrl = 'https://api.github.com/repos/SagerNet/sing-box/releases/latest'
-const AlphaUrl = 'https://api.github.com/repos/SagerNet/sing-box/releases?per_page=2'
+const AlphaUrl = 'https://api.github.com/repos/SagerNet/sing-box/releases?per_page=3'
 
 const StablePage = 'https://github.com/SagerNet/sing-box/releases/latest'
 const AlphaPage = 'https://github.com/SagerNet/sing-box/releases'
@@ -47,6 +47,8 @@ export const useCoreBranch = (isAlpha = false) => {
   const remoteVersionLoading = ref(false)
   const downloading = ref(false)
   const downloadCompleted = ref(false)
+  const downloadProgress = ref('')
+  const cancelDownload = ref<() => void>()
 
   const rollbackable = ref(false)
 
@@ -65,13 +67,15 @@ export const useCoreBranch = (isAlpha = false) => {
     () => remoteVersion.value && localVersion.value !== remoteVersion.value,
   )
 
-  const grantable = computed(() => localVersion.value && envStore.env.os !== 'windows')
+  const grantable = computed(() => localVersion.value && envStore.env.os !== OS.Windows)
 
   const CoreFilePath = `${CoreWorkingDirectory}/${getKernelFileName(isAlpha)}`
   const CoreBakFilePath = `${CoreFilePath}.bak`
 
   const downloadCore = async () => {
     downloading.value = true
+    downloadProgress.value = ''
+    cancelDownload.value = undefined
     try {
       const { body } = await HttpGet<Record<string, any>>(releaseUrl, {
         Authorization: getGitHubApiAuthorization(),
@@ -80,8 +84,8 @@ export const useCoreBranch = (isAlpha = false) => {
 
       const release = isAlpha ? body.find((v: any) => v.prerelease === true) : body
       if (!release) throw 'Not Found'
-      const { assets, name } = release
-      const assetName = getKernelAssetFileName(name)
+      const { assets, tag_name } = release
+      const assetName = getKernelAssetFileName(tag_name.replace('v', ''))
       const asset = assets.find((v: any) => v.name === assetName)
       if (!asset) throw 'Asset Not Found:' + assetName
       if (asset.uploader.type !== 'Bot') {
@@ -92,12 +96,12 @@ export const useCoreBranch = (isAlpha = false) => {
       }
 
       const downloadCacheFile = `data/.cache/${assetName}`
-      const downloadCancelId = downloadCacheFile
 
-      const { update, destroy } = message.info('common.downloading', 10 * 60 * 1_000, () => {
-        HttpCancel(downloadCancelId)
+      cancelDownload.value = () => {
+        HttpCancel(downloadCacheFile)
         setTimeout(() => RemoveFile(downloadCacheFile), 1000)
-      })
+        cancelDownload.value = undefined
+      }
 
       await MakeDir(CoreWorkingDirectory)
 
@@ -106,10 +110,11 @@ export const useCoreBranch = (isAlpha = false) => {
         downloadCacheFile,
         undefined,
         (progress, total) => {
-          update(t('common.downloading') + ((progress / total) * 100).toFixed(2) + '%')
+          const txt = t('common.downloading') + ((progress / total) * 100).toFixed(2) + '%'
+          downloadProgress.value = txt
         },
-        { CancelId: downloadCancelId },
-      ).finally(destroy)
+        { CancelId: downloadCacheFile },
+      )
 
       const stableFileName = getKernelFileName()
 
@@ -167,8 +172,8 @@ export const useCoreBranch = (isAlpha = false) => {
       })
       const release = isAlpha ? body.find((v: any) => v.prerelease === true) : body
       if (!release) throw 'Not Found'
-      const { name, tag_name } = release
-      return (name || tag_name).replace('v', '') as string
+      const { tag_name } = release
+      return tag_name.replace('v', '') as string
     } catch (error: any) {
       console.log(error)
       showTips && message.error(error)
@@ -183,7 +188,6 @@ export const useCoreBranch = (isAlpha = false) => {
     try {
       await kernelApiStore.restartCore()
       downloadCompleted.value = false
-      message.success('common.success')
     } catch (error: any) {
       message.error(error)
     }
@@ -252,9 +256,11 @@ export const useCoreBranch = (isAlpha = false) => {
     remoteVersion,
     remoteVersionLoading,
     downloading,
+    downloadProgress,
     refreshLocalVersion,
     refreshRemoteVersion,
     downloadCore,
+    cancelDownload,
     restartCore,
     rollbackCore,
     grantCorePermission,

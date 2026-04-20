@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	sysruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ func (a *App) Exec(path string, args []string, options ExecOptions) FlagResult {
 	cmd := exec.Command(exePath, args...)
 	SetCmdWindowHidden(cmd)
 
+	cmd.Dir = options.WorkingDirectory
 	cmd.Env = os.Environ()
 
 	for key, value := range options.Env {
@@ -34,15 +37,19 @@ func (a *App) Exec(path string, args []string, options ExecOptions) FlagResult {
 	}
 
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return FlagResult{false, err.Error()}
-	}
 
 	var output string
 	if options.Convert {
-		output = ConvertByte2String(out)
+		output = strings.TrimSpace(ConvertByte2String(out))
 	} else {
-		output = string(out)
+		output = strings.TrimSpace(string(out))
+	}
+
+	if err != nil {
+		if output == "" {
+			output = err.Error()
+		}
+		return FlagResult{false, output}
 	}
 
 	return FlagResult{true, output}
@@ -53,14 +60,20 @@ func (a *App) ExecBackground(path string, args []string, outEvent string, endEve
 
 	exePath := GetPath(path)
 	absPath := exePath
+	pidPath := ""
 
 	if _, err := os.Stat(exePath); os.IsNotExist(err) {
 		exePath = path
 	}
 
+	if options.PidFile != "" {
+		pidPath = GetPath(options.PidFile)
+	}
+
 	cmd := exec.Command(exePath, args...)
 	SetCmdWindowHidden(cmd)
 
+	cmd.Dir = options.WorkingDirectory
 	cmd.Env = os.Environ()
 
 	for key, value := range options.Env {
@@ -76,6 +89,17 @@ func (a *App) ExecBackground(path string, args []string, outEvent string, endEve
 
 	if err := cmd.Start(); err != nil {
 		return FlagResult{false, err.Error()}
+	}
+
+	pidStr := strconv.Itoa(cmd.Process.Pid)
+
+	if pidPath != "" {
+		err := os.WriteFile(pidPath, []byte(pidStr), os.ModePerm)
+		if err != nil {
+			_ = SendExitSignal(cmd.Process)
+			_ = waitForProcessExitWithTimeout(cmd.Process, 10)
+			return FlagResult{false, err.Error()}
+		}
 	}
 
 	if outEvent != "" && a.Bus != nil {
@@ -106,15 +130,17 @@ func (a *App) ExecBackground(path string, args []string, outEvent string, endEve
 	if endEvent != "" && a.Bus != nil {
 		go func() {
 			cmd.Wait()
+			if pidPath != "" {
+				_ = os.Remove(pidPath)
+			}
 			a.Bus.Emit(endEvent)
 		}()
 	}
 
 	pid := cmd.Process.Pid
-	// persist pid info so frontend can locate the binary
 	_ = os.WriteFile(GetPath("data/.cache/core-process"), []byte(strconv.Itoa(pid)+","+absPath), 0644)
 
-	return FlagResult{true, strconv.Itoa(pid)}
+	return FlagResult{true, pidStr}
 }
 
 func (a *App) ProcessInfo(pid int32) FlagResult {
@@ -126,11 +152,36 @@ func (a *App) ProcessInfo(pid int32) FlagResult {
 	}
 
 	name, err := proc.Name()
-	if err != nil {
-		return FlagResult{false, err.Error()}
+	if err == nil && name != "" {
+		return FlagResult{true, name}
 	}
 
-	return FlagResult{true, name}
+	exePath, exeErr := proc.Exe()
+	if exeErr == nil && exePath != "" {
+		return FlagResult{true, filepath.Base(exePath)}
+	}
+
+	cmdline, cmdlineErr := proc.CmdlineSlice()
+	if cmdlineErr == nil && len(cmdline) > 0 && cmdline[0] != "" {
+		return FlagResult{true, filepath.Base(cmdline[0])}
+	}
+
+	errs := []string{}
+	if err != nil {
+		errs = append(errs, "name: "+err.Error())
+	}
+	if exeErr != nil {
+		errs = append(errs, "exe: "+exeErr.Error())
+	}
+	if cmdlineErr != nil {
+		errs = append(errs, "cmdline: "+cmdlineErr.Error())
+	}
+
+	if len(errs) == 0 {
+		return FlagResult{false, "failed to resolve process info"}
+	}
+
+	return FlagResult{false, strings.Join(errs, "; ")}
 }
 
 func (a *App) ProcessMemory(pid int32) FlagResult {
@@ -142,11 +193,19 @@ func (a *App) ProcessMemory(pid int32) FlagResult {
 	}
 
 	memInfo, err := proc.MemoryInfo()
-	if err != nil {
-		return FlagResult{false, err.Error()}
+	if err == nil && memInfo != nil {
+		return FlagResult{true, strconv.FormatUint(memInfo.RSS, 10)}
 	}
 
-	return FlagResult{true, strconv.FormatUint(memInfo.RSS, 10)}
+	if sysruntime.GOOS == "darwin" {
+		rss, fallbackErr := getDarwinProcessRSS(pid)
+		if fallbackErr == nil {
+			return FlagResult{true, strconv.FormatUint(rss, 10)}
+		}
+		return FlagResult{false, fmt.Sprintf("memory info: %v; ps fallback: %v", err, fallbackErr)}
+	}
+
+	return FlagResult{false, err.Error()}
 }
 
 func (a *App) KillProcess(pid int, timeout int) FlagResult {
@@ -196,4 +255,27 @@ func waitForProcessExitWithTimeout(process *os.Process, timeoutSeconds int) erro
 			interval = min(time.Duration(interval*2), maxInterval)
 		}
 	}
+}
+
+func getDarwinProcessRSS(pid int32) (uint64, error) {
+	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(int(pid))).CombinedOutput()
+	if err != nil {
+		output := strings.TrimSpace(string(out))
+		if output == "" {
+			return 0, err
+		}
+		return 0, fmt.Errorf("%v: %s", err, output)
+	}
+
+	rssKB := strings.TrimSpace(string(out))
+	if rssKB == "" {
+		return 0, fmt.Errorf("empty rss output")
+	}
+
+	rss, err := strconv.ParseUint(rssKB, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return rss * 1024, nil
 }

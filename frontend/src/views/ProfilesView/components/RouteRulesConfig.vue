@@ -166,14 +166,14 @@ const renderRule = (rule: IRule) => {
 <template>
   <Empty v-if="model.length === 0 || (model.length === 1 && !isInsertionPointMissing)">
     <template #description>
-      <Button @click="handleAdd" icon="add" type="primary" size="small">
+      <Button icon="add" type="primary" size="small" @click="handleAdd">
         {{ t('common.add') }}
       </Button>
     </template>
   </Empty>
 
   <Divider v-if="isInsertionPointMissing">
-    <Button @click="handleAddInsertionPoint" type="text" size="small">
+    <Button type="text" size="small" @click="handleAddInsertionPoint">
       {{ t('kernel.addInsertionPoint') }}
     </Button>
   </Divider>
@@ -182,34 +182,36 @@ const renderRule = (rule: IRule) => {
     <Card v-for="(rule, index) in model" :key="rule.id" class="mb-2">
       <div v-if="rule.type === RuleType.InsertionPoint" class="text-center font-bold">
         <Divider class="cursor-move">
-          <Button @click="handleAdd" icon="add" type="text" size="small">
+          <Button icon="add" type="text" size="small" @click="handleAdd">
             {{ t('kernel.insertionPoint') }}
           </Button>
         </Divider>
       </div>
-      <div v-else class="flex items-center py-2 gap-8">
-        <Switch v-model="rule.enable" border="square" size="small" />
-        <div class="font-bold">
+      <div v-else class="flex items-start py-2 gap-8">
+        <div class="shrink-0">
+          <Switch v-model="rule.enable" border="square" size="small" />
+        </div>
+        <div class="font-bold flex-1 rule-content">
           <span
             v-if="hasLost(rule)"
-            @click="showLost"
             class="cursor-pointer"
             :style="{ color: 'rgb(200, 193, 11)' }"
+            @click="showLost"
           >
             [ ! ]
           </span>
           {{ renderRule(rule) }}
         </div>
-        <div class="ml-auto">
+        <div class="ml-auto shrink-0">
           <Button
             v-if="rule.type === RuleType.RuleSet && rule.payload && hasLost(rule)"
-            @click="handleClearRuleset(rule)"
             type="text"
+            @click="handleClearRuleset(rule)"
           >
             {{ t('common.clear') }}
           </Button>
-          <Button @click="handleEdit(index)" icon="edit" type="text" size="small" />
-          <Button @click="handleDelete(index)" icon="delete" type="text" size="small" />
+          <Button icon="edit" type="text" size="small" @click="handleEdit(index)" />
+          <Button icon="delete" type="text" size="small" @click="handleDelete(index)" />
         </div>
       </div>
     </Card>
@@ -293,22 +295,14 @@ const renderRule = (rule: IRule) => {
       </template>
       <template v-else-if="fields.action === RuleAction.Sniff">
         <div class="form-item">
-          <div>
-            {{ t('kernel.route.rules.sniffer.name') }}
-            <Switch :model-value="fields.sniffer.length === 0" disabled>All</Switch>
-          </div>
-          <div class="flex flex-col gap-4 items-end">
-            <CheckBox
-              v-model="fields.sniffer"
-              :options="RuleSnifferOptions.slice(0, 5)"
-              class="ml-4"
-            />
-            <CheckBox
-              v-model="fields.sniffer"
-              :options="RuleSnifferOptions.slice(5)"
-              class="ml-4"
-            />
-          </div>
+          {{ t('kernel.route.rules.sniffer.name') }}
+          <Select
+            v-model="fields.sniffer"
+            multiple
+            clearable
+            :options="RuleSnifferOptions"
+            placeholder="All"
+          />
         </div>
       </template>
       <template v-else-if="fields.action === RuleAction.Resolve">
@@ -333,11 +327,11 @@ const renderRule = (rule: IRule) => {
           <Card
             v-for="ruleset in ruleSet"
             :key="ruleset.tag"
-            :title="ruleset.tag"
-            @click="handleUse(ruleset)"
-            :selected="fields.payload.includes(ruleset.id)"
             v-tips="ruleset.type"
+            :title="ruleset.tag"
+            :selected="fields.payload.includes(ruleset.id)"
             class="ruleset"
+            @click="handleUse(ruleset)"
           >
             <div class="text-12">
               {{ ruleset.type }}
@@ -349,3 +343,10 @@ const renderRule = (rule: IRule) => {
     </template>
   </Modal>
 </template>
+
+<style lang="less" scoped>
+.rule-content {
+  min-width: 0;
+  word-break: break-all;
+}
+</style>

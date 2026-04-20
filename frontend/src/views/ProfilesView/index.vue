@@ -16,9 +16,10 @@ import { debounce, deepClone, generateConfig, message, sampleID, alert } from '@
 
 import { useModal } from '@/components/Modal'
 
-import ProfileForm from './components/ProfileForm.vue'
-
 import type { Menu } from '@/types/app'
+
+import ProfileForm from './components/ProfileForm.vue'
+import ProfileEditor from './components/ProfileEditor.vue'
 
 const { t } = useI18n()
 const [Modal, modalApi] = useModal({})
@@ -99,6 +100,14 @@ const secondaryMenusList: Menu[] = [
       } catch (error: any) {
         message.error(error.message || error)
       }
+    },
+  },
+  {
+    label: 'profiles.editSourceFile',
+    handler: async (id: string) => {
+      const profile = profilesStore.getProfileById(id)!
+      modalApi.setProps({ title: profile.name, width: '90', height: '90' })
+      modalApi.setContent(ProfileEditor, { profile }).open()
     },
   },
 ]
@@ -182,7 +191,7 @@ const handleUseProfile = async (p: IProfile) => {
   appSettingsStore.app.kernel.profile = p.id
 
   if (kernelApiStore.running) {
-    await kernelApiStore.restartCore(undefined, false)
+    await kernelApiStore.restartCore()
   }
 }
 
@@ -201,7 +210,7 @@ const onSortUpdate = debounce(profilesStore.saveProfiles, 1000)
       <template #description>
         <I18nT keypath="profiles.empty" tag="div" scope="global" class="flex items-center mt-12">
           <template #action>
-            <Button @click="handleShowProfileForm()" type="link">{{ t('common.add') }}</Button>
+            <Button type="link" @click="handleShowProfileForm()">{{ t('common.add') }}</Button>
           </template>
         </I18nT>
         <div class="flex items-center">
@@ -214,7 +223,7 @@ const onSortUpdate = debounce(profilesStore.saveProfiles, 1000)
   <div v-else class="grid-list-header">
     <Radio v-model="appSettingsStore.app.profilesView" :options="ViewOptions" class="mr-auto" />
     <CustomAction :actions="appStore.customActions.profiles_header" />
-    <Button @click="handleShowProfileForm()" type="primary" icon="add">
+    <Button type="primary" icon="add" @click="handleShowProfileForm()">
       {{ t('common.add') }}
     </Button>
   </div>
@@ -226,18 +235,19 @@ const onSortUpdate = debounce(profilesStore.saveProfiles, 1000)
     <Card
       v-for="p in profilesStore.profiles"
       :key="p.id"
+      v-menu="generateMenus(p)"
       :title="p.name"
       :selected="appSettingsStore.app.kernel.profile === p.id"
-      @dblclick="handleUseProfile(p)"
-      v-menu="generateMenus(p)"
       class="grid-list-item"
+      @dblclick="handleUseProfile(p)"
     >
       <template #title-prefix>
         <Tag
           v-if="isCreatedBySubscription(p.id)"
-          @click="showAuto"
           color="primary"
+          size="small"
           style="margin-left: 0"
+          @click="showAuto"
         >
           {{ t('common.auto') }}
         </Tag>
@@ -248,13 +258,13 @@ const onSortUpdate = debounce(profilesStore.saveProfiles, 1000)
           <Button type="link" size="small" icon="more" />
           <template #overlay>
             <div class="flex flex-col gap-4 min-w-64 p-4">
-              <Button @click="handleUseProfile(p)" type="text">
+              <Button type="text" @click="handleUseProfile(p)">
                 {{ t('common.use') }}
               </Button>
-              <Button @click="handleShowProfileForm(p.id)" type="text">
+              <Button type="text" @click="handleShowProfileForm(p.id)">
                 {{ t('common.edit') }}
               </Button>
-              <Button @click="handleDeleteProfile(p)" type="text">
+              <Button type="text" @click="handleDeleteProfile(p)">
                 {{ t('common.delete') }}
               </Button>
             </div>
@@ -263,13 +273,13 @@ const onSortUpdate = debounce(profilesStore.saveProfiles, 1000)
       </template>
 
       <template v-else #extra>
-        <Button @click="handleUseProfile(p)" type="text" size="small">
+        <Button type="text" size="small" @click="handleUseProfile(p)">
           {{ t('common.use') }}
         </Button>
-        <Button @click="handleShowProfileForm(p.id)" type="text" size="small">
+        <Button type="text" size="small" @click="handleShowProfileForm(p.id)">
           {{ t('common.edit') }}
         </Button>
-        <Button @click="handleDeleteProfile(p)" type="text" size="small">
+        <Button type="text" size="small" @click="handleDeleteProfile(p)">
           {{ t('common.delete') }}
         </Button>
       </template>

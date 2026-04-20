@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository == 'GUI-for-Cores/GUI.for.SingBox'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
         with:
           version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "latest"
           cache: "pnpm"
@@ -26,7 +26,7 @@ jobs:
           cd frontend
           pnpm install --frozen-lockfile
           pnpm build-only
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: frontend-dist
           path: frontend/dist
@@ -37,13 +37,13 @@ jobs:
     env:
       APP_NAME: GUI.for.SingBox
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist
@@ -57,7 +57,7 @@ jobs:
             $env:GOARCH=$arch
 
             Write-Host "==> Building Windows $arch..."
-            ~/go/bin/wails build -m -s -trimpath -skipbindings -devtools -tags webkit2_41 -o "$env:APP_NAME.exe"
+            ~/go/bin/wails build -m -s -trimpath -skipbindings -devtools -o "$env:APP_NAME.exe"
 
             cd build/bin
             $zipName = "$env:APP_NAME-windows-$arch.zip"
@@ -68,7 +68,7 @@ jobs:
           $arches = @("amd64","arm64","386")
           foreach ($arch in $arches) { Build-And-Pack $arch }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: windows-builds
           path: build/bin/*.zip
@@ -79,13 +79,13 @@ jobs:
     env:
       APP_NAME: GUI.for.SingBox
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist
@@ -100,7 +100,7 @@ jobs:
             export GOOS=darwin GOARCH=$arch
 
             echo "==> Building macOS $arch..."
-            ~/go/bin/wails build -m -s -trimpath -skipbindings -devtools -tags webkit2_41 -o $APP_NAME.exe
+            ~/go/bin/wails build -m -s -trimpath -skipbindings -devtools -o $APP_NAME.exe
 
             cd build/bin
             zip -q -r $APP_NAME-darwin-$arch.zip $APP_NAME.app
@@ -109,7 +109,7 @@ jobs:
 
           for arch in amd64 arm64; do build_and_pack $arch; done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: macos-builds
           path: build/bin/*.zip
@@ -120,13 +120,13 @@ jobs:
     env:
       APP_NAME: GUI.for.SingBox
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist
@@ -151,7 +151,7 @@ jobs:
 
           build_and_pack amd64
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: linux-builds
           path: build/bin/*.zip
@@ -160,7 +160,7 @@ jobs:
     needs: [Build-Windows, Build-macOS, Build-Linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release-assets
       - name: Create Release
@@ -170,6 +170,6 @@ jobs:
           name: ${{ github.ref_name }}
           files: release-assets/**/*.zip
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, 'dev') }}
           body: |
             Auto-generated release from GitHub Actions.

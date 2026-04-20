@@ -1,10 +1,11 @@
-import { httpClient } from './http'
-import { EventsOn, EventsOff, EventsEmit } from './events'
 
 import { RequestMethod } from '@/enums/app'
+import { useAppSettingsStore } from '@/stores/appSettings'
 import { sampleID, getUserAgent } from '@/utils'
 import { GetSystemOrKernelProxy } from '@/utils/helper'
-import { useAppSettingsStore } from '@/stores/appSettings'
+
+import { EventsOn, EventsOff, EventsEmit } from './events'
+import { httpClient } from './http'
 
 interface Request {
   method: RequestMethod

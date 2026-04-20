@@ -2,12 +2,9 @@
 import { ref, watch } from 'vue'
 
 import { IsStartup } from '@/bridge'
-import { NavigationBar, TitleBar } from '@/components'
+import { NavigationBar, TitleBar, SplashView, AboutView, CommandView } from '@/components'
 import * as Stores from '@/stores'
-import { exitApp, sampleID, sleep, message } from '@/utils'
-import AboutView from '@/views/AboutView.vue'
-import CommandView from '@/views/CommandView.vue'
-import SplashView from '@/views/SplashView.vue'
+import { sleep, message } from '@/utils'
 
 const loading = ref(true)
 const percent = ref(0)
@@ -27,7 +24,7 @@ const bootstrapped = ref(false)
 
 const handleRestartCore = async () => {
   try {
-    await kernelApiStore.restartCore(undefined, false)
+    await kernelApiStore.restartCore()
   } catch (e: any) {
     message.error(e.message || e)
   }
@@ -161,12 +158,36 @@ watch(
       class="fixed right-32 bottom-32"
     >
       <Button
-        @click="handleRestartCore"
         v-tips="'home.overview.restart'"
         :loading="kernelApiStore.restarting"
         icon="restart"
         class="rounded-full w-42 h-42 shadow"
+        @click="handleRestartCore"
       />
     </div>
   </template>
+
+  <Modal
+    v-model:open="appStore.showAbout"
+    :cancel="false"
+    :submit="false"
+    mask-closable
+    min-width="50"
+  >
+    <AboutView />
+  </Modal>
+
+  <Menu
+    v-model="appStore.menuShow"
+    :position="appStore.menuPosition"
+    :menu-list="appStore.menuList"
+  />
+
+  <Tips
+    v-model="appStore.tipsShow"
+    :position="appStore.tipsPosition"
+    :message="appStore.tipsMessage"
+  />
+
+  <CommandView v-if="!loading" />
 </template>

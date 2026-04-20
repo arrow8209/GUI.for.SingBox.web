@@ -17,12 +17,12 @@ import {
 
 import { useModal } from '@/components/Modal'
 
+import type { Menu, Subscription } from '@/types/app'
+
 import ProxiesEditor from './components/ProxiesEditor.vue'
 import ProxiesView from './components/ProxiesView.vue'
 import SubscribeForm from './components/SubscribeForm.vue'
 import SubscribeScript from './components/SubscribeScript.vue'
-
-import type { Menu, Subscription } from '@/types/app'
 
 const menuList: Menu[] = [
   {
@@ -174,7 +174,7 @@ const onSortUpdate = debounce(subscribeStore.saveSubscribes, 1000)
       <template #description>
         <I18nT keypath="subscribes.empty" tag="div" scope="global" class="flex items-center mt-12">
           <template #action>
-            <Button @click="handleShowSubForm()" type="link">{{ t('common.add') }}</Button>
+            <Button type="link" @click="handleShowSubForm()">{{ t('common.add') }}</Button>
           </template>
         </I18nT>
         <div class="flex items-center">
@@ -188,13 +188,13 @@ const onSortUpdate = debounce(subscribeStore.saveSubscribes, 1000)
     <Radio v-model="appSettingsStore.app.subscribesView" :options="ViewOptions" class="mr-auto" />
     <CustomAction :actions="appStore.customActions.subscriptions_header" />
     <Button
-      @click="handleUpdateSubs"
       :disabled="noUpdateNeeded"
       :type="noUpdateNeeded ? 'text' : 'link'"
+      @click="handleUpdateSubs"
     >
       {{ t('common.updateAll') }}
     </Button>
-    <Button @click="handleShowSubForm()" type="primary" icon="add" class="ml-16">
+    <Button type="primary" icon="add" class="ml-16" @click="handleShowSubForm()">
       {{ t('common.add') }}
     </Button>
   </div>
@@ -206,13 +206,13 @@ const onSortUpdate = debounce(subscribeStore.saveSubscribes, 1000)
     <Card
       v-for="s in subscribeStore.subscribes"
       :key="s.id"
+      v-menu="generateMenus(s)"
       :title="s.name"
       :disabled="s.disabled"
-      v-menu="generateMenus(s)"
       class="grid-list-item"
     >
       <template #title-prefix>
-        <Tag v-if="s.updating" color="cyan">
+        <Tag v-if="s.updating" color="cyan" size="small">
           {{ t('subscribe.updating') }}
         </Tag>
       </template>
@@ -221,10 +221,10 @@ const onSortUpdate = debounce(subscribeStore.saveSubscribes, 1000)
         <Icon
           v-if="s.type !== 'File' && s.website"
           v-tips="'subscribe.website'"
-          :size="14"
-          icon="link2"
-          @click="BrowserOpenURL(s.website)"
+          icon="link"
+          color="var(--card-color)"
           class="mx-4 cursor-pointer shrink-0"
+          @click="BrowserOpenURL(s.website)"
         />
       </template>
 

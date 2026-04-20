@@ -21,6 +21,7 @@ const props = withDefaults(defineProps<Props>(), {
   multiple: false,
   border: true,
   size: 'default',
+  placeholder: '',
   autoSize: false,
   clearable: false,
 })
@@ -48,7 +49,7 @@ const displayLabel = computed(() => {
     if (selected.length === 0) {
       return props.placeholder ?? 'common.none'
     }
-    return selected.map((item) => optionsValueLabelMapping.value[item] ?? item).join('、')
+    return selected.map((item) => t(optionsValueLabelMapping.value[item] ?? item)).join('、')
   }
   const label = props.options.find((v) => v.value === model.value)?.label ?? (model.value as string)
   return (label || props.placeholder) ?? 'common.none'
@@ -130,6 +131,10 @@ const handleClear = () => {
         </span>
         <Button
           :icon="innerClearable ? 'close' : 'arrowDown'"
+          type="text"
+          size="small"
+          class="ml-auto"
+          style="margin-right: -6px"
           @click.stop="
             () => {
               if (innerClearable) {
@@ -140,26 +145,25 @@ const handleClear = () => {
               }
             }
           "
-          type="text"
-          size="small"
-          class="ml-auto"
-          style="margin-right: -6px"
         />
       </div>
     </template>
 
     <template #overlay="{ close }">
       <div class="flex flex-col gap-4 min-w-64 p-4">
+        <slot v-if="options.length === 0" name="empty">
+          <Empty :icon-size="42" />
+        </slot>
         <Button
           v-for="o in options"
           :key="o.value"
+          type="text"
           @click="
             () => {
               handleSelect(o.value)
               !props.multiple && close()
             }
           "
-          type="text"
         >
           <div class="realtive w-full">
             <div v-if="isSelected(o.value)" class="absolute left-8">

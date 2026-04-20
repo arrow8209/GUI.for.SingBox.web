@@ -1,6 +1,6 @@
 import { httpClient } from './http'
 
-import type { TrayContent } from '@/types/app'
+import type { TrayContent, MenuItem } from '@/types/app'
 
 export const RestartApp = async () => {
   return httpClient.post<{ flag: boolean; data: string }>('/restart').then((res) => {
@@ -17,6 +17,10 @@ export const ShowMainWindow = async () => {
   // No concept of native window in B/S mode.
 }
 
+export const UpdateTrayAndMenus = async (_tray: TrayContent, _menus: MenuItem[]) => {
+  // Tray + menus not supported in web mode.
+}
+
 export const UpdateTray = async (_tray: TrayContent) => {
   // Tray not supported in web mode.
 }
@@ -25,9 +29,21 @@ export const UpdateTrayMenus = async () => {
   // Tray menus not supported in web mode.
 }
 
-export const GetEnv = () => httpClient.get<EnvResult>('/env')
+export const GetEnv = (<T extends string | undefined = undefined>(
+  key?: T,
+): Promise<T extends string ? string : EnvResult> => {
+  if (key) {
+    // Web 模式下不暴露服务器环境变量，返回空串保证上游桌面专用代码路径不崩
+    return Promise.resolve('' as any)
+  }
+  return httpClient.get<EnvResult>('/env') as any
+}) as {
+  (): Promise<EnvResult>
+  (key: string): Promise<string>
+}
 
-export const IsStartup = () => httpClient.get<{ startup: boolean }>('/startup').then((res) => res.startup)
+export const IsStartup = () =>
+  httpClient.get<{ startup: boolean }>('/startup').then((res) => res.startup)
 
 export const GetInterfaces = async () => {
   const { flag, data } = await httpClient.get<{ flag: boolean; data: string }>('/interfaces')
@@ -48,4 +64,5 @@ export type EnvResult = {
   basePath: string
   os: string
   arch: string
+  isPrivileged?: boolean
 }

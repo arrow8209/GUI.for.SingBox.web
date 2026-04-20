@@ -1,7 +1,8 @@
 import { stringify } from 'yaml'
 
-import { useAppSettingsStore, useEnvStore } from '@/stores'
-import { APP_TITLE, APP_VERSION } from '@/utils'
+import { useAppSettingsStore } from '@/stores'
+import { APP_TITLE } from '@/utils'
+import { OS } from '@/enums/app'
 
 export const deepClone = <T>(json: T): T => JSON.parse(JSON.stringify(json))
 
@@ -82,20 +83,20 @@ export const getValue = <T = unknown>(obj: unknown, expr: string): T | undefined
   }, obj) as T
 }
 
-type IteratorFn<T> = (item: T, array: T[]) => Promise<any>
+type IteratorFn<T, K> = (item: T, array: T[]) => Promise<K>
 type PoolController = { pause: () => void; resume: () => void; cancel: () => void }
 interface RunPoolOptions {
   shouldPause?: () => Promise<void>
   shouldCancel?: () => boolean
 }
 
-async function runPool<T>(
+async function runPool<T, K>(
   poolLimit: number,
   array: T[],
-  iteratorFn: IteratorFn<T>,
+  iteratorFn: IteratorFn<T, K>,
   options: RunPoolOptions = {},
 ) {
-  const results: Promise<any>[] = []
+  const results: Promise<{ ok: true; value: K } | { ok: false; error: Error }>[] = []
   const activePromises = new Set<Promise<any>>()
   const { shouldPause, shouldCancel } = options
 
@@ -110,8 +111,8 @@ async function runPool<T>(
 
     const promise = Promise.resolve()
       .then(() => iteratorFn(item, array))
-      .then((value) => ({ ok: true, value }))
-      .catch((error) => ({ ok: false, error }))
+      .then<{ ok: true; value: K }>((value) => ({ ok: true, value }))
+      .catch<{ ok: false; error: Error }>((error) => ({ ok: false, error }))
 
     results.push(promise)
 
@@ -126,15 +127,22 @@ async function runPool<T>(
     }
   }
 
-  const settled = await Promise.all(results)
-  return settled.filter((r) => r.ok).map((r) => r.value)
+  return await Promise.all(results)
 }
 
-export const asyncPool = <T>(poolLimit: number, array: T[], iteratorFn: IteratorFn<T>) => {
+export const asyncPool = <T, K = any>(
+  poolLimit: number,
+  array: T[],
+  iteratorFn: IteratorFn<T, K>,
+) => {
   return runPool(poolLimit, array, iteratorFn)
 }
 
-export const createAsyncPool = <T>(poolLimit: number, array: T[], iteratorFn: IteratorFn<T>) => {
+export const createAsyncPool = <T, K>(
+  poolLimit: number,
+  array: T[],
+  iteratorFn: IteratorFn<T, K>,
+) => {
   let paused = false
   let cancelled = false
   let resumeResolve: (() => void) | null = null
@@ -181,11 +189,9 @@ export const getGitHubApiAuthorization = () => {
   return appSettings.app.githubApiToken ? `Bearer ${appSettings.app.githubApiToken}` : ''
 }
 
-// System ScheduledTask Helper
-export const getTaskSchXmlString = async (delay = 30) => {
-  const { basePath, appName } = useEnvStore().env
-
-  const xml = /*xml*/ `<?xml version="1.0" encoding="UTF-16"?>
+export const getAutoStartConfiguration = (os: OS, appPath: string, delay = 30) => {
+  if (os === OS.Windows) {
+    const xml = /*xml*/ `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>${APP_TITLE} at startup</Description>
@@ -224,14 +230,42 @@ export const getTaskSchXmlString = async (delay = 30) => {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>${basePath}\\${appName}</Command>
+      <Command>${appPath}</Command>
       <Arguments>tasksch</Arguments>
     </Exec>
   </Actions>
-</Task>
-`
-
-  return xml
+</Task>`
+    return xml
+  }
+  if (os === OS.Linux) {
+    const desktop = `[Desktop Entry]
+Type=Application
+Exec=${appPath} tasksch
+Name=${APP_TITLE}`
+    return desktop
+  }
+  if (os === OS.Darwin) {
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${APP_TITLE}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/open</string>
+        <string>${appPath}</string>
+        <string>--args</string>
+        <string>tasksch</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>`
+    return plist
+  }
+  throw new Error('Not Implemented')
 }
 
 export const setIntervalImmediately = (func: () => void, interval: number) => {
@@ -267,24 +301,97 @@ export const deepAssign = (...args: any[]) => {
   return target
 }
 
-export const base64Encode = (str: string) => {
-  return btoa(
-    encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) =>
-      String.fromCharCode(('0x' + p1) as any),
-    ),
-  )
+export const readonly = <T>(obj: T): T => {
+  if (typeof obj !== 'object' || obj === null) return obj
+  return new Proxy(obj, {
+    get(target, key) {
+      const result = Reflect.get(target, key)
+      if (typeof result === 'object' && result !== null) {
+        return readonly(result)
+      }
+      return result
+    },
+    set(target, key) {
+      console.warn(`Set operation on key "${String(key)}" failed: target is readonly.`, target)
+      return true
+    },
+    deleteProperty(target, key) {
+      console.warn(`Delete operation on key "${String(key)}" failed: target is readonly.`, target)
+      return true
+    },
+    defineProperty(target, key) {
+      console.warn(
+        `DefineProperty operation on key "${String(key)}" failed: target is readonly.`,
+        target,
+      )
+      return false
+    },
+    setPrototypeOf(target) {
+      console.warn(`SetPrototypeOf operation failed: target is readonly.`, target)
+      return false
+    },
+  })
 }
 
-export const base64Decode = (str: string) => {
-  return decodeURIComponent(
-    atob(str)
-      .split('')
-      .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-      .join(''),
-  )
+export const normalizeBase64 = (str: string): string => {
+  const normalized = str.trim().replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/')
+
+  const padding = (4 - (normalized.length % 4)) % 4
+  return normalized + '='.repeat(padding)
+}
+
+export const base64UrlEncode = (str: string): string => {
+  return base64Encode(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+export const base64Encode = (str: string): string => {
+  const bytes = new TextEncoder().encode(str)
+  const len = bytes.length
+  const chars = Array(len)
+
+  for (let i = 0; i < len; i++) {
+    chars[i] = String.fromCharCode(bytes[i]!)
+  }
+
+  return btoa(chars.join(''))
+}
+
+export const base64Decode = (input: string): string => {
+  const base64 = normalizeBase64(input)
+  const binary = atob(base64)
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
 }
 
 export const stringifyNoFolding = (content: any) => {
   // Disable string folding
   return stringify(content, { lineWidth: 0, minContentWidth: 0 })
+}
+
+export const createTextMatcher = (include: string, exclude: string) => {
+  const includeRegex = include ? buildSmartRegExp(include) : null
+  const excludeRegex = exclude ? buildSmartRegExp(exclude) : null
+  return (text: string) => {
+    const flag1 = includeRegex ? includeRegex.test(text) : true
+    const flag2 = excludeRegex ? excludeRegex.test(text) : false
+    return flag1 && !flag2
+  }
+}
+
+const regexCache = new Map<string, RegExp>()
+
+export const buildSmartRegExp = (pattern: string, flags = '') => {
+  const key = pattern + '::' + flags
+  if (regexCache.has(key)) return regexCache.get(key)!
+
+  let r
+  try {
+    r = new RegExp(pattern, flags)
+  } catch {
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    r = new RegExp(escaped, flags)
+  }
+
+  regexCache.set(key, r)
+  return r
 }

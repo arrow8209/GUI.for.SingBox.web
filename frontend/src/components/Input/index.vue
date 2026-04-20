@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 
 import useI18n from '@/lang'
 import { debounce } from '@/utils'
+import { ClipboardGetText } from '@/bridge'
 
 export interface Props {
   modelValue?: string | number | undefined
@@ -13,6 +14,7 @@ export interface Props {
   size?: 'default' | 'small'
   editable?: boolean
   clearable?: boolean
+  allowPaste?: boolean
   autofocus?: boolean
   min?: number
   max?: number
@@ -25,11 +27,15 @@ export interface Props {
 const props = withDefaults(defineProps<Props>(), {
   modelValue: '',
   autoSize: false,
+  placeholder: undefined,
   type: 'text',
   lang: 'javascript',
   size: 'default',
   editable: false,
   autofocus: false,
+  allowPaste: false,
+  min: undefined,
+  max: undefined,
   clearable: false,
   disabled: false,
   border: true,
@@ -44,12 +50,16 @@ const inputRef = useTemplateRef('inputRef')
 const innerClearable = computed(
   () => props.clearable && props.type !== 'code' && props.modelValue && !props.disabled,
 )
+const innerAllowPaste = computed(() => props.allowPaste && props.type !== 'code' && !props.disabled)
 
 const { t } = useI18n.global
 
 const validate = (val: string | number) => {
   if (props.type === 'number') {
     val = Number(val)
+    if (Number.isNaN(val)) {
+      throw new Error('Please enter a valid number')
+    }
     const { min, max } = props
     if (min !== undefined) {
       val = val < min ? min : val
@@ -73,6 +83,13 @@ const handleClear = () => {
   emits('update:modelValue', val)
   emits('change', val)
   !props.editable && nextTick(() => inputRef.value?.focus())
+}
+
+const handlePaste = async () => {
+  const text = await ClipboardGetText()
+  const val = validate(text)
+  emits('update:modelValue', val)
+  emits('change', val)
 }
 
 const showInput = () => {
@@ -115,13 +132,14 @@ defineExpose({
     class="gui-input inline-flex items-center rounded-4 cursor-pointer px-4"
   >
     <div v-if="$slots.prefix" class="flex items-center shrink-0">
-      <slot name="prefix"></slot>
+      <slot name="prefix" v-bind="{ showInput }"></slot>
     </div>
     <Icon v-if="disabled" icon="forbidden" class="shrink-0" />
     <div
       v-if="editable && !showEdit"
-      @click="showInput"
       class="w-full overflow-hidden whitespace-nowrap text-ellipsis"
+      :class="{ 'italic pr-4': !modelValue }"
+      @click="showInput"
     >
       <slot name="editable" v-bind="{ value: modelValue }">
         {{ modelValue || t(placeholder || 'common.none') }}
@@ -130,39 +148,33 @@ defineExpose({
     <template v-else>
       <CodeViewer
         v-if="type === 'code'"
-        @change="(value: string) => onInput({ target: { value } })"
-        :model-value="(modelValue ?? '') + ''"
+        :value="modelValue"
         :lang="lang"
         :editable="!disabled"
         :placeholder="placeholder"
         class="code w-full overflow-y-auto"
+        @change="(value: string) => onInput({ target: { value } })"
       />
       <input
         v-else
+        ref="inputRef"
         :value="modelValue"
         :placeholder="placeholder"
         :type="type"
         :disabled="disabled"
         :readonly="readonly"
+        autocomplete="off"
+        class="flex-1 inline-block py-6 outline-none border-0 bg-transparent w-0"
         @input="onInput"
         @blur="onSubmit"
-        @keydown.enter="inputRef?.blur"
+        @keydown.enter="() => nextTick(() => inputRef?.blur())"
         @keydown.esc.stop.prevent="inputRef?.blur"
-        autocomplete="off"
-        ref="inputRef"
-        class="flex-1 inline-block py-6 outline-none border-0 bg-transparent w-0"
       />
-      <Button
-        v-if="innerClearable"
-        @click="handleClear"
-        :icon-size="12"
-        icon="clear2"
-        type="text"
-        size="small"
-      />
+      <Button v-if="innerClearable" icon="clear2" type="text" size="small" @click="handleClear" />
+      <Button v-if="innerAllowPaste" icon="paste" type="text" size="small" @click="handlePaste" />
     </template>
     <div v-if="$slots.suffix" class="flex items-center shrink-0">
-      <slot name="suffix"></slot>
+      <slot name="suffix" v-bind="{ showInput }"></slot>
     </div>
   </div>
 </template>

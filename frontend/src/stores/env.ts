@@ -3,25 +3,40 @@ import { ref, watch } from 'vue'
 
 import { GetEnv } from '@/bridge'
 import { useAppSettingsStore, useKernelApiStore } from '@/stores'
-import { updateTrayMenus, SetSystemProxy, GetSystemProxy } from '@/utils'
+import { updateTrayAndMenus, SetSystemProxy, GetSystemProxy } from '@/utils'
+import { OS } from '@/enums/app'
+import type { AppEnv } from '@/types/app'
 
 export const useEnvStore = defineStore('env', () => {
   const appSettings = useAppSettingsStore()
   const kernelApiStore = useKernelApiStore()
 
-  const env = ref({
+  const env = ref<AppEnv>({
     appName: '',
     appVersion: '',
     basePath: '',
-    os: '',
+    appPath: '',
+    os: '' as OS,
     arch: '',
+    isPrivileged: false,
   })
 
   const systemProxy = ref(false)
 
   const setupEnv = async () => {
     const _env = await GetEnv()
-    env.value = _env
+    let appPath = `${_env.basePath}/${_env.appName}`
+    if (_env.os === OS.Windows) {
+      appPath = appPath.replaceAll('/', '\\')
+    } else if (_env.os === OS.Darwin) {
+      appPath = appPath.replace(`/Contents/MacOS/${_env.appName}`, '')
+    }
+    env.value = {
+      ..._env,
+      os: _env.os as OS,
+      appPath,
+      isPrivileged: _env.isPrivileged ?? false,
+    }
   }
 
   const updateSystemProxyStatus = async () => {
@@ -50,7 +65,14 @@ export const useEnvStore = defineStore('env', () => {
 
   const setSystemProxy = async () => {
     const proxyBypassList = appSettings.app.proxyBypassList
-    const proxyPort = kernelApiStore.getProxyPort()
+    let proxyPort = kernelApiStore.getProxyPort()
+
+    if (!proxyPort) {
+      await kernelApiStore.updateConfig('inbound', undefined)
+    }
+
+    proxyPort = kernelApiStore.getProxyPort()
+
     if (!proxyPort) throw 'home.overview.needPort'
 
     await SetSystemProxy(true, '127.0.0.1:' + proxyPort.port, proxyPort.proxyType, proxyBypassList)
@@ -69,7 +91,7 @@ export const useEnvStore = defineStore('env', () => {
     else await clearSystemProxy()
   }
 
-  watch(systemProxy, updateTrayMenus)
+  watch(systemProxy, updateTrayAndMenus)
 
   return {
     env,

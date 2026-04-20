@@ -1,7 +1,17 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
-import { getProxies, getConfigs, setConfigs, Api, resolveCoreConnection, getCoreProxyBase } from '@/api/kernel'
+import {
+  getProxies,
+  getConfigs,
+  setConfigs,
+  onLogs,
+  onMemory,
+  onConnections,
+  onTraffic,
+  initWebsocket,
+  destroyWebsocket,
+} from '@/api/kernel'
 import { ProcessInfo, KillProcess, ExecBackground, ReadFile, WriteFile, RemoveFile } from '@/bridge'
 import {
   CoreConfigFilePath,
@@ -22,47 +32,22 @@ import {
   useSubscribesStore,
   useRulesetsStore,
 } from '@/stores'
-import { useAuthStore } from '@/stores/auth'
 import {
   generateConfigFile,
-  updateTrayMenus,
+  updateTrayAndMenus,
   getKernelFileName,
   restoreProfile,
   deepClone,
-  WebSockets,
-  setIntervalImmediately,
   message,
   getKernelRuntimeArgs,
   getKernelRuntimeEnv,
   eventBus,
 } from '@/utils'
 
-import type {
-  CoreApiConfig,
-  CoreApiProxy,
-  CoreApiLogsData,
-  CoreApiMemoryData,
-  CoreApiTrafficData,
-  CoreApiConnectionsData,
-} from '@/types/kernel'
+import type { CoreApiConfig, CoreApiProxy } from '@/types/kernel'
 
 export type ProxyType = 'mixed' | 'http' | 'socks'
 
-const resolveCoreProxyWSBase = () => {
-  const httpBase = getCoreProxyBase()
-  try {
-    if (httpBase.startsWith('http')) {
-      const url = new URL(httpBase, window.location.origin)
-      const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-      return `${protocol}//${url.host}${url.pathname}`
-    }
-  } catch (error) {
-    console.error('[kernelApi] failed to resolve core proxy base, fallback to relative ws path', error)
-  }
-  const normalized = httpBase.startsWith('/') ? httpBase : '/' + httpBase
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}${normalized}`
-}
 
 export const useKernelApiStore = defineStore('kernelApi', () => {
   const envStore = useEnvStore()
@@ -72,7 +57,6 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
   const subscribesStore = useSubscribesStore()
   const rulesetsStore = useRulesetsStore()
   const appSettingsStore = useAppSettingsStore()
-  const authStore = useAuthStore()
 
   /** RESTful API */
   const config = ref<CoreApiConfig>({
@@ -122,7 +106,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       } catch (error) {
         console.error('[kernelApi] failed to restore runtime profile', error)
       }
-      const profile = profilesStore.getProfileById(appSettingsStore.app.kernel.profile)
+      const profile =
+        profilesStore.getProfileById(appSettingsStore.app.kernel.profile) ||
+        profilesStore.currentProfile
       if (!runtimeProfile && profile) {
         runtimeProfile = deepClone(profile)
         console.info('[kernelApi] fallback runtime profile created from selected profile', {
@@ -135,17 +121,15 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       }
       if (profile) {
         const _profile = deepClone(profile)
-        runtimeProfile.inbounds.forEach((inbound) => {
-          const _in = _profile.inbounds.find((v) => v.tag === inbound.tag)
-          if (_in) {
-            inbound.id = _in.id
+        _profile.inbounds.forEach((inbound) => {
+          const runtimeInbound = runtimeProfile?.inbounds.find((v) => v.tag === inbound.tag)
+          if (runtimeInbound) {
+            runtimeInbound.id = inbound.id
+          } else {
+            inbound.enable = false
+            runtimeProfile?.inbounds.push(inbound)
           }
         })
-        const tunInbound = _profile.inbounds.find((v) => v.type === Inbound.Tun)
-        if (tunInbound && !runtimeProfile.inbounds.find((v) => v.type === Inbound.Tun)) {
-          tunInbound.enable = false
-          runtimeProfile.inbounds.push(tunInbound)
-        }
         runtimeProfile.id = _profile.id
         runtimeProfile.outbounds = _profile.outbounds
         runtimeProfile.experimental = _profile.experimental
@@ -161,9 +145,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       return
     }
 
-    const mixed = runtimeProfile.inbounds.find((v) => v.mixed)
-    const http = runtimeProfile.inbounds.find((v) => v.http)
-    const socks = runtimeProfile.inbounds.find((v) => v.socks)
+    const mixed = runtimeProfile.inbounds.find((v) => v.enable && v.mixed)
+    const http = runtimeProfile.inbounds.find((v) => v.enable && v.http)
+    const socks = runtimeProfile.inbounds.find((v) => v.enable && v.socks)
     const tun = runtimeProfile.inbounds.find((v) => v.tun)
     config.value['mixed-port'] = mixed?.mixed?.listen.listen_port || 0
     config.value['port'] = http?.http?.listen.listen_port || 0
@@ -194,6 +178,20 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       await setConfigs({ mode: value })
       await refreshConfig()
       return
+    }
+
+    const patchInbound = () => {
+      if (!runtimeProfile) return
+      const inbound = runtimeProfile.inbounds.find(
+        (v) =>
+          (v.type === Inbound.Mixed && v.mixed?.listen.listen_port) ||
+          (v.type === Inbound.Http && v.http?.listen.listen_port) ||
+          (v.type === Inbound.Socks && v.socks?.listen.listen_port),
+      )
+      if (!inbound) {
+        throw 'home.overview.needPort'
+      }
+      inbound.enable = true
     }
 
     const patchInboundPort = (type: 'mixed' | 'socks' | 'http', port: number) => {
@@ -244,6 +242,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     }
 
     const fieldHandlerMap: Recordable<() => void> = {
+      inbound: () => patchInbound(),
       http: () => patchInboundPort(Inbound.Http, value),
       socks: () => patchInboundPort(Inbound.Socks, value),
       mixed: () => patchInboundPort(Inbound.Mixed, value),
@@ -256,7 +255,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
 
     fieldHandlerMap[field]?.()
 
-    await restartCore()
+    await restartCore(undefined, true)
     await envStore.updateSystemProxyStatus()
   }
 
@@ -265,125 +264,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     proxies.value = b
   }
 
-  /* WebSocket */
-  let websocketInstance: WebSockets | null
-  const longLivedWS = {
-    setup: undefined as (() => void) | undefined,
-    cleanup: undefined as (() => void) | undefined,
-    timer: -1,
-  }
-  const shortLivedWS = {
-    setup: undefined as (() => void) | undefined,
-    cleanup: undefined as (() => void) | undefined,
-    timer: -1,
-  }
-  const onLogsEvents = {
-    onFirst: undefined as (() => void) | undefined,
-    onEmpty: undefined as (() => void) | undefined,
-  }
 
-  const websocketHandlers = {
-    logs: [] as ((data: CoreApiLogsData) => void)[],
-    memory: [] as ((data: CoreApiMemoryData) => void)[],
-    traffic: [] as ((data: CoreApiTrafficData) => void)[],
-    connections: [] as ((data: CoreApiConnectionsData) => void)[],
-  } as const
-
-  const createCoreWSHandlerRegister = <S extends C[], C>(
-    source: S,
-    events: { onFirst?: () => void; onEmpty?: () => void } = {},
-  ) => {
-    const register = (cb: S[number]) => {
-      source.push(cb)
-      source.length === 1 && events.onFirst?.()
-      const unregister = () => {
-        const idx = source.indexOf(cb)
-        idx !== -1 && source.splice(idx, 1)
-        source.length === 0 && events.onEmpty?.()
-      }
-      return unregister
-    }
-    return register
-  }
-
-  const createCoreWSDispatcher = <T>(source: ((data: T) => void)[]) => {
-    return (data: T) => {
-      source.forEach((cb) => cb(data))
-    }
-  }
-
-  const initCoreWebsockets = () => {
-    websocketInstance = new WebSockets({
-      beforeConnect() {
-        const { coreBase, coreBearer } = resolveCoreConnection()
-        this.base = resolveCoreProxyWSBase()
-        const params: Record<string, string> = { coreBase }
-        if (coreBearer) {
-          params.coreBearer = coreBearer
-        }
-        if (authStore.token) {
-          params.token = authStore.token
-        }
-        this.params = params
-      },
-    })
-
-    const { connect: connectLongLived, disconnect: disconnectLongLived } =
-      websocketInstance.createWS([
-        {
-          name: 'Memory',
-          url: Api.Memory,
-          cb: createCoreWSDispatcher(websocketHandlers.memory),
-        },
-        {
-          name: 'Traffic',
-          url: Api.Traffic,
-          cb: createCoreWSDispatcher(websocketHandlers.traffic),
-        },
-        {
-          name: 'Connections',
-          url: Api.Connections,
-          cb: createCoreWSDispatcher(websocketHandlers.connections),
-        },
-      ])
-
-    const { connect: connectShortLived, disconnect: disconnectShortLived } =
-      websocketInstance.createWS([
-        {
-          name: 'Logs',
-          url: Api.Logs,
-          params: { level: 'debug' },
-          cb: createCoreWSDispatcher(websocketHandlers.logs),
-        },
-      ])
-
-    longLivedWS.setup = () => {
-      longLivedWS.timer = setIntervalImmediately(connectLongLived, 3_000)
-    }
-    longLivedWS.cleanup = () => {
-      clearInterval(longLivedWS.timer)
-      disconnectLongLived()
-      longLivedWS.cleanup = undefined
-    }
-
-    shortLivedWS.setup = () => {
-      shortLivedWS.timer = setIntervalImmediately(connectShortLived, 3_000)
-    }
-    shortLivedWS.cleanup = () => {
-      clearInterval(shortLivedWS.timer)
-      disconnectShortLived()
-      shortLivedWS.cleanup = undefined
-    }
-
-    onLogsEvents.onFirst = shortLivedWS.setup
-    onLogsEvents.onEmpty = shortLivedWS.cleanup
-  }
-
-  const destroyCoreWebsockets = () => {
-    longLivedWS.cleanup?.()
-    shortLivedWS.cleanup?.()
-    websocketInstance = null
-  }
 
   /* Bridge API */
   const corePid = ref(-1)
@@ -406,7 +287,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
       return ProcessInfo(pid).catch(() => '')
     }
 
-    let pidTxt = await ReadFile(CorePidFilePath).catch(() => '')
+    const pidTxt = await ReadFile(CorePidFilePath).catch(() => '')
     let pid = pidTxt ? parsePid(pidTxt) : -1
     let processName = await describeProcess(pid)
 
@@ -430,8 +311,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     coreStateLoading.value = false
 
     if (running.value) {
-      initCoreWebsockets()
-      longLivedWS.setup?.()
+      initWebsocket()
       await Promise.all([refreshConfig(), refreshProviderProxies()])
       await envStore.updateSystemProxyStatus()
     } else if (appSettingsStore.app.autoStartKernel) {
@@ -456,22 +336,23 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
           onCoreStopped()
           reject(output)
         },
-        { StopOutputKeyword: CoreStopOutputKeyword, Env: getKernelRuntimeEnv(isAlpha) },
+        {
+          PidFile: CorePidFilePath,
+          StopOutputKeyword: CoreStopOutputKeyword,
+          Env: getKernelRuntimeEnv(isAlpha),
+        },
       ).catch((e) => reject(e))
     })
   }
 
   const onCoreStarted = async (pid: number) => {
-    await WriteFile(CorePidFilePath, String(pid))
-
     corePid.value = pid
     running.value = true
     needRestart.value = false
     isCoreStartedByThisInstance = true
     coreStoppedPromise = new Promise((r) => (coreStoppedResolver = r))
 
-    initCoreWebsockets()
-    longLivedWS.setup?.()
+    initWebsocket()
     await Promise.all([refreshConfig(), refreshProviderProxies()])
 
     if (appSettingsStore.app.autoSetSystemProxy) {
@@ -483,15 +364,18 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
   }
 
   const onCoreStopped = async () => {
-    await RemoveFile(CorePidFilePath)
+    if (!isCoreStartedByThisInstance) {
+      await RemoveFile(CorePidFilePath)
+    }
 
     corePid.value = -1
     running.value = false
     needRestart.value = false
 
-    destroyCoreWebsockets()
+    destroyWebsocket()
 
-    if (appSettingsStore.app.autoSetSystemProxy) {
+    await envStore.updateSystemProxyStatus()
+    if (envStore.systemProxy) {
       await envStore.clearSystemProxy()
     }
     await pluginsStore.onCoreStoppedTrigger()
@@ -538,7 +422,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     }
   }
 
-  const restartCore = async (cleanupTask?: () => Promise<any>, keepRuntimeProfile = true) => {
+  const restartCore = async (cleanupTask?: () => Promise<any>, keepRuntimeProfile = false) => {
     restarting.value = true
     try {
       await stopCore()
@@ -659,7 +543,7 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     return source.concat([proxySignature, unAvailable, sortByDelay]).join('')
   })
 
-  watch([watchSources, running], updateTrayMenus)
+  watch([watchSources, running], updateTrayAndMenus)
 
   return {
     startCore,
@@ -680,23 +564,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
     refreshProviderProxies,
     getProxyPort,
 
-    onLogs: createCoreWSHandlerRegister(websocketHandlers.logs, onLogsEvents),
-    onMemory: createCoreWSHandlerRegister(websocketHandlers.memory),
-    onTraffic: createCoreWSHandlerRegister(websocketHandlers.traffic),
-    onConnections: createCoreWSHandlerRegister(websocketHandlers.connections),
-
-    // Deprecated
-    startKernel: (...args: any[]) => {
-      console.warn('[Deprecated] "startKernel" is deprecated. Please use "startCore" instead.')
-      startCore(...args)
-    },
-    stopKernel: () => {
-      console.warn('[Deprecated] "stopKernel" is deprecated. Please use "stopCore" instead.')
-      stopCore()
-    },
-    restartKernel: (...args: any[]) => {
-      console.warn('[Deprecated] "restartKernel" is deprecated. Please use "restartCore" instead.')
-      restartCore(...args)
-    },
+    onLogs,
+    onMemory,
+    onTraffic,
+    onConnections,
   }
 })

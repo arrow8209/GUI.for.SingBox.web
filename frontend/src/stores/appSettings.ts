@@ -16,11 +16,12 @@ import {
   DefaultConcurrencyLimit,
   DefaultControllerSensitivity,
   DefaultFontFamily,
+  DefaultTestTimeout,
   DefaultTestURL,
   UserFilePath,
   LocalesFilePath,
 } from '@/constant/app'
-import { CorePidFilePath, DefaultConnections, DefaultCoreConfig } from '@/constant/kernel'
+import { DefaultConnections, DefaultCoreConfig } from '@/constant/kernel'
 import {
   Theme,
   WindowStartState,
@@ -32,7 +33,7 @@ import {
   Branch,
 } from '@/enums/app'
 import i18n, { loadLocaleMessages, reloadLocale } from '@/lang'
-import { debounce, updateTrayMenus, ignoredError, sleep, GetSystemProxyBypass } from '@/utils'
+import { debounce, updateTrayAndMenus, ignoredError, sleep, GetSystemProxyBypass } from '@/utils'
 
 import { useEnvStore } from './env'
 
@@ -47,6 +48,8 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
     lang: Lang.EN,
     theme: Theme.Auto,
     color: Color.Default,
+    primaryColor: '#000',
+    secondaryColor: '#545454',
     fontFamily: DefaultFontFamily,
     profilesView: View.Grid,
     subscribesView: View.Grid,
@@ -77,6 +80,7 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
       cardColumns: DefaultCardColumns,
       sortByDelay: false,
       testUrl: DefaultTestURL,
+      testTimeout: DefaultTestTimeout,
       concurrencyLimit: DefaultConcurrencyLimit,
       controllerCloseMode: ControllerCloseMode.All,
       controllerSensitivity: DefaultControllerSensitivity,
@@ -91,6 +95,7 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
     rollingRelease: true,
     debugOutline: false,
     debugNoAnimation: false,
+    debugNoRounded: false,
     debugBorder: false,
     pages: ['Overview', 'Profiles', 'Subscriptions', 'Plugins'],
   })
@@ -142,58 +147,6 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
 
     await loadLocales(false, false)
 
-    if ((app.value.kernel.branch as any) === 'latest') {
-      app.value.kernel.branch = Branch.Alpha
-    }
-    if (app.value.kernel.controllerCloseMode === undefined) {
-      app.value.kernel.controllerCloseMode = ControllerCloseMode.All
-    }
-    if (app.value.kernel.controllerSensitivity === undefined) {
-      app.value.kernel.controllerSensitivity = DefaultControllerSensitivity
-    }
-    if (app.value.addGroupToMenu === undefined) {
-      app.value.addGroupToMenu = false
-    }
-    if (app.value.kernel.concurrencyLimit === undefined) {
-      app.value.kernel.concurrencyLimit = DefaultConcurrencyLimit
-    }
-    // @ts-expect-error(Deprecated)
-    if (app.value['font-family'] !== undefined) {
-      // @ts-expect-error(Deprecated)
-      app.value.fontFamily = app.value['font-family']
-      // @ts-expect-error(Deprecated)
-      delete app.value['font-family']
-    }
-
-    if (typeof app.value.connections.visibility['metadata.destinationIP'] === 'undefined') {
-      app.value.connections.visibility['metadata.destinationIP'] = false
-      app.value.connections.order.push('metadata.destinationIP')
-      app.value.connections.order = app.value.connections.order.filter(
-        (field) =>
-          !['metadata.process', 'metadata.sniffHost', 'metadata.remoteDestination'].includes(field),
-      )
-    }
-
-    if (!app.value.kernel.main) {
-      app.value.kernel.main = DefaultCoreConfig()
-      app.value.kernel.alpha = DefaultCoreConfig()
-    }
-
-    if (!app.value.kernel.cardColumns) {
-      app.value.kernel.cardColumns = DefaultCardColumns
-    }
-    // @ts-expect-error(Deprecated)
-    if (app.value.kernel.running !== undefined) {
-      // @ts-expect-error(Deprecated)
-      await WriteFile(CorePidFilePath, String(app.value.kernel.pid))
-      // @ts-expect-error(Deprecated)
-      delete app.value.kernel.running
-      // @ts-expect-error(Deprecated)
-      delete app.value.kernel.pid
-    }
-    if (app.value.kernel.realMemoryUsage === undefined) {
-      app.value.kernel.realMemoryUsage = false
-    }
     if (!app.value.proxyBypassList) {
       app.value.proxyBypassList = await GetSystemProxyBypass()
     }
@@ -229,13 +182,19 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
           ? Theme.Dark
           : Theme.Light
         : settings.theme
-    const { primary, secondary } = Colors[settings.color]
+    let primary, secondary
+    if (settings.color === Color.Custom) {
+      ;({ primaryColor: primary, secondaryColor: secondary } = settings)
+    } else {
+      ;({ primary, secondary } = Colors[settings.color] ?? { primary: '', secondary: '' })
+    }
     document.documentElement.style.setProperty('--primary-color', primary)
     document.documentElement.style.setProperty('--secondary-color', secondary)
     document.body.style.fontFamily = settings.fontFamily
-    document.body.setAttribute('debug-outline', String(settings.debugOutline))
-    document.body.setAttribute('debug-no-animation', String(settings.debugNoAnimation))
-    document.body.setAttribute('debug-border', String(settings.debugBorder))
+    document.body.setAttribute('feature-outline', String(settings.debugOutline))
+    document.body.setAttribute('feature-no-animation', String(settings.debugNoAnimation))
+    document.body.setAttribute('feature-no-rounded', String(settings.debugNoRounded))
+    document.body.setAttribute('feature-border', String(settings.debugBorder))
   }
 
   watch(
@@ -277,7 +236,7 @@ export const useAppSettingsStore = defineStore('app-settings', () => {
       () => app.value.lang,
       () => app.value.addPluginToMenu,
     ],
-    updateTrayMenus,
+    updateTrayAndMenus,
   )
 
   watch(themeMode, setAppTheme, { immediate: true })

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Cron } from 'croner'
 import { ref, inject, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -11,11 +10,12 @@ import {
   useRulesetsStore,
   usePluginsStore,
 } from '@/stores'
-import { deepClone, message, sampleID } from '@/utils'
+import { alert, deepClone, formatDate, isValidCron, message, sampleID } from '@/utils'
 
 import Button from '@/components/Button/index.vue'
 
 import type { ScheduledTask } from '@/types/app'
+import { IsNotificationAvailable, RequestNotificationAuthorization } from '@/bridge'
 
 interface Props {
   id?: string
@@ -46,17 +46,14 @@ const rulesetsStore = useRulesetsStore()
 const pluginsStore = usePluginsStore()
 
 const handleCancel = inject('cancel') as any
+const handleSubmit = inject('submit') as any
 
-const handleSubmit = async () => {
-  try {
-    const job = new Cron(task.value.cron, () => {})
-    job.stop()
-  } catch (error: any) {
-    message.error(error.message)
+const handleSave = async () => {
+  const { ok, reason } = isValidCron(task.value.cron)
+  if (!ok) {
+    message.error(reason)
     return
   }
-
-  loading.value = true
 
   switch (task.value.type) {
     case ScheduledTasksType.UpdateSubscription:
@@ -73,13 +70,15 @@ const handleSubmit = async () => {
       break
   }
 
+  loading.value = true
+
   try {
     if (props.id) {
       await scheduledTasksStore.editScheduledTask(props.id, task.value)
     } else {
       await scheduledTasksStore.addScheduledTask(task.value)
     }
-    handleCancel()
+    await handleSubmit()
   } catch (error: any) {
     console.error(error)
     message.error(error)
@@ -94,6 +93,42 @@ const handleUse = (list: string[], id: string) => {
     list.splice(idx, 1)
   } else {
     list.push(id)
+  }
+}
+
+const handleValidate = () => {
+  const { ok, reason } = isValidCron(task.value.cron)
+  if (!ok) {
+    message.error(reason)
+    return
+  }
+  message.success('common.success')
+}
+
+const handleViewNextRuns = () => {
+  const { ok, reason, instance } = isValidCron(task.value.cron)
+  if (!ok) {
+    message.error(reason)
+    return
+  }
+  const list = instance!.nextRuns(99).map((v, i) => {
+    const index = (i + 1).toString().padStart(2, '0')
+    return index + ' - '.repeat(14) + formatDate(v.getTime(), 'YYYY/MM/DD HH:mm:ss')
+  })
+  alert('Next Run Time', list.join('\n'))
+}
+
+const onNotificationChange = async (v: boolean) => {
+  if (v) {
+    try {
+      if (!(await IsNotificationAvailable())) {
+        throw 'Notifications not available on this platform'
+      }
+      await RequestNotificationAuthorization()
+    } catch (error: any) {
+      task.value.notification = false
+      message.warn(error)
+    }
   }
 }
 
@@ -121,7 +156,7 @@ const modalSlots = {
         type: 'primary',
         loading: loading.value,
         disabled: !task.value.name || !task.value.cron,
-        onClick: handleSubmit,
+        onClick: handleSave,
       },
       () => t('common.save'),
     ),
@@ -141,16 +176,27 @@ defineExpose({ modalSlots })
     <div class="form-item">
       {{ t('scheduledtask.cron') }} *
       <div class="min-w-[75%]">
-        <Input v-model="task.cron" :placeholder="t('scheduledtask.cronTips')" class="w-full" />
+        <Input v-model="task.cron" :placeholder="t('scheduledtask.cronTips')" class="w-full">
+          <template #suffix>
+            <Button type="primary" size="small" @click="handleValidate">Validate</Button>
+            <Button type="primary" size="small" class="ml-4" @click="handleViewNextRuns">
+              Next Run Time
+            </Button>
+          </template>
+        </Input>
       </div>
     </div>
     <div class="form-item">
-      <div class="mr-8">{{ t('scheduledtask.type') }}</div>
-      <Radio v-model="task.type" :options="ScheduledTaskOptions" />
+      <div>{{ t('scheduledtask.type') }}</div>
+      <Radio v-model="task.type" :options="ScheduledTaskOptions.slice(5)" />
+    </div>
+    <div class="form-item">
+      <div></div>
+      <Radio v-model="task.type" :options="ScheduledTaskOptions.slice(0, 5)" />
     </div>
     <div class="form-item">
       {{ t('scheduledtask.notification') }}
-      <Switch v-model="task.notification" />
+      <Switch v-model="task.notification" @change="onNotificationChange" />
     </div>
 
     <div v-if="task.type === ScheduledTasksType.UpdateSubscription">
@@ -207,8 +253,8 @@ defineExpose({ modalSlots })
       <div class="grid grid-cols-3 gap-8">
         <Card
           v-for="p in pluginsStore.plugins"
-          v-tips="p.description"
           :key="p.id"
+          v-tips="p.description"
           :title="p.name"
           :selected="task.plugins.includes(p.id)"
           @click="handleUse(task.plugins, p.id)"

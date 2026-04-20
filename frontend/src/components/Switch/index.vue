@@ -13,6 +13,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   size: 'default',
   border: 'default',
+  label: '',
   disabled: false,
 })
 
@@ -33,12 +34,21 @@ const toggle = () => {
 
 <template>
   <div
-    @click="toggle"
     v-tips.slow="label"
-    :class="[size, border, model ? 'on' : 'off', disabled ? 'disabled' : '']"
-    class="gui-switch relative cursor-pointer h-24 inline-flex items-center rounded-full text-12"
+    :class="[
+      size,
+      border,
+      model ? 'on' : 'off',
+      border === 'square' ? 'rounded-4' : 'rounded-full',
+      { 'cursor-not-allowed': disabled },
+    ]"
+    class="gui-switch relative cursor-pointer h-24 inline-flex items-center text-12 duration-200"
+    @click="toggle"
   >
-    <div class="dot absolute h-18 w-18 rounded-full duration-200"></div>
+    <div
+      :class="[border === 'square' ? 'rounded-4' : 'rounded-full']"
+      class="dot absolute h-18 w-18 duration-200"
+    ></div>
 
     <div v-if="$slots.default || label" class="slot line-clamp-1 break-all">
       <span v-if="label">{{ t(label) }}</span>
@@ -50,9 +60,9 @@ const toggle = () => {
 <style lang="less" scoped>
 .gui-switch {
   min-width: 50px;
-  .slot {
-    transition: margin 0.2s;
-  }
+  // .slot {
+  //   transition: margin 0.2s;
+  // }
 }
 
 .small {
@@ -64,16 +74,17 @@ const toggle = () => {
 }
 
 .square {
-  border-radius: 4px;
   .dot {
     width: 4px;
-    border-radius: 2px;
   }
 }
 
 .on {
   color: #fff;
   background-color: var(--switch-on-bg);
+  &:hover {
+    background-color: var(--switch-on-hover-bg);
+  }
   .dot {
     left: calc(100% - 22px);
     background-color: var(--switch-on-dot-bg);
@@ -108,6 +119,9 @@ const toggle = () => {
 .off {
   color: var(--card-color);
   background-color: var(--switch-off-bg);
+  &:hover {
+    background-color: var(--switch-off-hover-bg);
+  }
   .dot {
     left: 4px;
     background-color: var(--switch-off-dot-bg);
@@ -134,9 +148,5 @@ const toggle = () => {
       margin-right: 8px;
     }
   }
-}
-
-.disabled {
-  cursor: not-allowed;
 }
 </style>

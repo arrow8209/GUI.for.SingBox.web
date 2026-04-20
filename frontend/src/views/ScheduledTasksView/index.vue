@@ -1,23 +1,37 @@
 <script setup lang="ts">
+import { Cron } from 'croner'
 import { useI18n, I18nT } from 'vue-i18n'
 
 import { DraggableOptions, ViewOptions } from '@/constant/app'
 import { View } from '@/enums/app'
 import { useAppSettingsStore, useScheduledTasksStore } from '@/stores'
-import { debounce, formatRelativeTime, formatDate, message } from '@/utils'
+import { debounce, formatRelativeTime, formatDate, message, alert } from '@/utils'
 
 import { useModal } from '@/components/Modal'
 
+import type { Menu, ScheduledTask } from '@/types/app'
+
 import ScheduledTaskForm from './components/ScheduledTaskForm.vue'
 import ScheduledTasksLogs from './components/ScheduledTasksLogs.vue'
-
-import type { Menu, ScheduledTask } from '@/types/app'
 
 const menuList: Menu[] = [
   {
     label: 'scheduledtasks.run',
     handler: (id: string) => {
       scheduledTasksStore.runScheduledTask(id)
+    },
+  },
+  {
+    label: 'scheduledtasks.next',
+    handler: (id: string) => {
+      const task = scheduledTasksStore.getScheduledTaskById(id)
+      if (task) {
+        const list = new Cron(task.cron).nextRuns(99).map((v, i) => {
+          const index = (i + 1).toString().padStart(2, '0')
+          return index + ' - '.repeat(14) + formatDate(v.getTime(), 'YYYY/MM/DD HH:mm:ss')
+        })
+        alert('Next Run Time', list.join('\n'))
+      }
     },
   },
   {
@@ -83,7 +97,7 @@ const onSortUpdate = debounce(scheduledTasksStore.saveScheduledTasks, 1000)
           class="flex items-center mt-12"
         >
           <template #action>
-            <Button @click="handleShowTaskForm()" type="link">{{ t('common.add') }}</Button>
+            <Button type="link" @click="handleShowTaskForm()">{{ t('common.add') }}</Button>
           </template>
         </I18nT>
       </template>
@@ -96,10 +110,10 @@ const onSortUpdate = debounce(scheduledTasksStore.saveScheduledTasks, 1000)
       :options="ViewOptions"
       class="mr-auto"
     />
-    <Button @click="handleShowTaskLogs()" type="text">
+    <Button type="text" @click="handleShowTaskLogs()">
       {{ t('scheduledtasks.logs') }}
     </Button>
-    <Button @click="handleShowTaskForm()" type="primary" icon="add" class="ml-16">
+    <Button type="primary" icon="add" class="ml-16" @click="handleShowTaskForm()">
       {{ t('common.add') }}
     </Button>
   </div>
@@ -114,9 +128,9 @@ const onSortUpdate = debounce(scheduledTasksStore.saveScheduledTasks, 1000)
     <Card
       v-for="s in scheduledTasksStore.scheduledtasks"
       :key="s.id"
+      v-menu="menuList.map((v) => ({ ...v, handler: () => v.handler?.(s.id) }))"
       :title="s.name"
       :disabled="s.disabled"
-      v-menu="menuList.map((v) => ({ ...v, handler: () => v.handler?.(s.id) }))"
       class="grid-list-item"
     >
       <template v-if="appSettingsStore.app.scheduledtasksView === View.Grid" #extra>

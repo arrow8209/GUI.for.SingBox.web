@@ -189,7 +189,7 @@ subscribesStore.subscribes.forEach(async ({ id, name, proxies }) => {
 <template>
   <Empty v-if="model.length === 0">
     <template #description>
-      <Button @click="handleAdd" icon="add" type="primary" size="small">
+      <Button icon="add" type="primary" size="small" @click="handleAdd">
         {{ t('common.add') }}
       </Button>
     </template>
@@ -198,26 +198,27 @@ subscribesStore.subscribes.forEach(async ({ id, name, proxies }) => {
   <div v-draggable="[model, DraggableOptions]">
     <Card v-for="(outbound, index) in model" :key="outbound.id" class="mb-2">
       <div class="flex items-center py-2">
-        <div class="font-bold" style="min-width: 90px">
+        <div class="font-bold flex items-center" style="min-width: 90px">
+          <img v-if="outbound.icon" :src="outbound.icon" class="w-18 h-18 mr-4" />
           <span
             v-if="hasLost(outbound)"
-            @click="showLost"
             class="cursor-pointer"
             style="color: rgb(200, 193, 11)"
+            @click="showLost"
           >
             [ ! ]
           </span>
           <span
             v-if="needToAdd(outbound)"
-            @click="showNeedToAdd"
             class="cursor-pointer"
             style="color: red"
+            @click="showNeedToAdd"
           >
             [ ! ]
           </span>
           {{ outbound.tag }}
         </div>
-        <Button @click="handleSortGroup(index)" type="link" size="small">
+        <Button type="link" size="small" @click="handleSortGroup(index)">
           (
           {{ t('kernel.outbounds.refsOutbound') }}:{{ clacOutboundsCount(outbound) }}
           /
@@ -225,11 +226,11 @@ subscribesStore.subscribes.forEach(async ({ id, name, proxies }) => {
           )
         </Button>
         <div class="ml-auto">
-          <Button v-if="hasLost(outbound)" @click="handleClearGroup(outbound)" type="text">
+          <Button v-if="hasLost(outbound)" type="text" @click="handleClearGroup(outbound)">
             {{ t('common.clear') }}
           </Button>
-          <Button @click="handleEditGroup(index)" icon="edit" type="text" size="small" />
-          <Button @click="handleDeleteGroup(index)" icon="delete" type="text" size="small" />
+          <Button icon="edit" type="text" size="small" @click="handleEditGroup(index)" />
+          <Button icon="delete" type="text" size="small" @click="handleDeleteGroup(index)" />
         </div>
       </div>
     </Card>
@@ -269,9 +270,13 @@ subscribesStore.subscribes.forEach(async ({ id, name, proxies }) => {
     </div>
     <template v-if="Outbound.Selector === fields.type || Outbound.Urltest === fields.type">
       <div class="form-item">
+        {{ t('kernel.outbounds.hidden') }}
+        <Switch v-model="fields.hidden" />
+      </div>
+      <!-- <div class="form-item">
         {{ t('kernel.outbounds.interrupt_exist_connections') }}
         <Switch v-model="fields.interrupt_exist_connections" />
-      </div>
+      </div> -->
       <div class="form-item">
         {{ t('kernel.outbounds.include') }}
         <Input v-model="fields.include" placeholder="keywords1|keywords2" />
@@ -279,6 +284,13 @@ subscribesStore.subscribes.forEach(async ({ id, name, proxies }) => {
       <div class="form-item">
         {{ t('kernel.outbounds.exclude') }}
         <Input v-model="fields.exclude" placeholder="keywords1|keywords2" />
+      </div>
+      <div class="form-item">
+        <div class="flex items-center gap-8">
+          {{ t('kernel.outbounds.icon') }}
+          <img v-if="fields.icon" :src="fields.icon" class="w-18 h-18" />
+        </div>
+        <Input v-model="fields.icon" clearable placeholder="https://" />
       </div>
     </template>
     <template v-if="Outbound.Direct === fields.type || Outbound.Block === fields.type">
@@ -306,8 +318,8 @@ subscribesStore.subscribes.forEach(async ({ id, name, proxies }) => {
       <div v-for="group in proxyGroup" :key="group.id" class="group">
         <Button
           :type="isExpanded(group.id) ? 'link' : 'text'"
-          @click="toggleExpanded(group.id)"
           class="sticky top-0 backdrop-blur-sm w-full"
+          @click="toggleExpanded(group.id)"
         >
           {{ t(group.name) }}
           <div class="ml-auto mr-8">{{ group.proxies.length }}</div>
@@ -331,8 +343,8 @@ subscribesStore.subscribes.forEach(async ({ id, name, proxies }) => {
               <Button
                 v-for="proxy in group.proxies"
                 :key="proxy.id"
-                @click="handleAddProxy(group.id, proxy.id, proxy.tag)"
                 :type="isInuse(group.id, proxy.id) ? 'link' : 'text'"
+                @click="handleAddProxy(group.id, proxy.id, proxy.tag)"
               >
                 {{ proxy.tag }}
                 <br />

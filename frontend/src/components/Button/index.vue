@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { IconType } from '@/components/Icon/index.vue'
+import { type IconName } from '@/components/Icon/icons'
 
 interface Props {
   type?: 'primary' | 'normal' | 'link' | 'text'
   size?: 'default' | 'small' | 'large'
   iconSize?: number
   iconColor?: string
-  icon?: IconType
+  icon?: IconName
   loading?: boolean
   disabled?: boolean
 }
@@ -14,6 +14,9 @@ interface Props {
 withDefaults(defineProps<Props>(), {
   type: 'normal',
   size: 'default',
+  iconSize: undefined,
+  iconColor: undefined,
+  icon: undefined,
   loading: false,
   disabled: false,
 })
@@ -36,7 +39,7 @@ withDefaults(defineProps<Props>(), {
         v-if="disabled"
         :color="`var(--btn-${type}-color)`"
         icon="forbidden"
-        class="pointer-events-none shrink-0"
+        class="pointer-events-none shrink-0 mr-4"
       />
       <Icon
         v-if="icon"

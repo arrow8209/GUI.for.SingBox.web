@@ -1,10 +1,14 @@
 import {
   Color,
   ControllerCloseMode,
+  Lang,
   PluginTrigger,
   RequestMethod,
   ScheduledTasksType,
+  Theme,
   View,
+  WebviewGpuPolicy,
+  WindowStartState,
 } from '@/enums/app'
 
 export const LocalesFilePath = 'data/locales'
@@ -25,6 +29,8 @@ export const PluginHubFilePath = 'data/.cache/plugin-list.json'
 
 export const RulesetHubFilePath = 'data/.cache/ruleset-list.json'
 
+export const RollingReleaseDirectory = 'data/rolling-release'
+
 export const DefaultFontFamily =
   'system-ui, "Microsoft YaHei UI", "Source Han Sans CN", "Twemoji Mozilla", sans-serif'
 
@@ -32,22 +38,6 @@ export const Colors = {
   [Color.Default]: {
     primary: 'rgb(0, 89, 214)',
     secondary: 'rgb(5, 62, 142)',
-  },
-  [Color.Orange]: {
-    primary: 'orange',
-    secondary: '#ab7207',
-  },
-  [Color.Pink]: {
-    primary: 'pink',
-    secondary: '#f1768b',
-  },
-  [Color.Red]: {
-    primary: 'red',
-    secondary: '#9e0404',
-  },
-  [Color.Skyblue]: {
-    primary: 'skyblue',
-    secondary: '#0ca4e2',
   },
   [Color.Green]: {
     primary: 'green',
@@ -57,7 +47,16 @@ export const Colors = {
     primary: 'purple',
     secondary: '#6a0f9c',
   },
+  [Color.Custom]: {
+    primary: '#000',
+    secondary: '#000',
+  },
 }
+
+export const LanguageOptions = [
+  { label: 'settings.lang.zh', value: Lang.ZH },
+  { label: 'settings.lang.en', value: Lang.EN },
+]
 
 export const ViewOptions = [
   { label: 'common.grid', value: View.Grid },
@@ -78,6 +77,51 @@ export const RequestMethodOptions = [
   { label: RequestMethod.Patch, value: RequestMethod.Patch },
 ]
 
+export const ThemeOptions = [
+  {
+    label: 'settings.theme.dark',
+    value: Theme.Dark,
+  },
+  {
+    label: 'settings.theme.light',
+    value: Theme.Light,
+  },
+  {
+    label: 'settings.theme.auto',
+    value: Theme.Auto,
+  },
+]
+
+export const ColorOptions = [
+  {
+    label: 'settings.color.default',
+    value: Color.Default,
+  },
+  {
+    label: 'settings.color.green',
+    value: Color.Green,
+  },
+  {
+    label: 'settings.color.purple',
+    value: Color.Purple,
+  },
+  {
+    label: 'settings.color.custom',
+    value: Color.Custom,
+  },
+]
+
+export const WindowStateOptions = [
+  { label: 'settings.windowState.normal', value: WindowStartState.Normal },
+  { label: 'settings.windowState.minimised', value: WindowStartState.Minimised },
+]
+
+export const WebviewGpuPolicyOptions = [
+  { label: 'settings.webviewGpuPolicy.always', value: WebviewGpuPolicy.Always },
+  { label: 'settings.webviewGpuPolicy.onDemand', value: WebviewGpuPolicy.OnDemand },
+  { label: 'settings.webviewGpuPolicy.never', value: WebviewGpuPolicy.Never },
+]
+
 // vue-draggable-plus config
 export const DraggableOptions = {
   animation: 150,
@@ -86,6 +130,7 @@ export const DraggableOptions = {
 export const PluginsTriggerOptions = [
   { label: 'plugin.on::startup', value: PluginTrigger.OnStartup },
   { label: 'plugin.on::ready', value: PluginTrigger.OnReady },
+  { label: 'plugin.on::reload', value: PluginTrigger.OnReload },
   { label: 'plugin.on::shutdown', value: PluginTrigger.OnShutdown },
   { label: 'plugin.on::manual', value: PluginTrigger.OnManual },
   { label: 'plugin.on::generate', value: PluginTrigger.OnGenerate },
@@ -103,11 +148,19 @@ export const ScheduledTaskOptions = [
   { label: 'scheduledtask.update::plugin', value: ScheduledTasksType.UpdatePlugin },
   { label: 'scheduledtask.run::plugin', value: ScheduledTasksType.RunPlugin },
   { label: 'scheduledtask.run::script', value: ScheduledTasksType.RunScript },
+  {
+    label: 'scheduledtask.update::all::subscription',
+    value: ScheduledTasksType.UpdateAllSubscription,
+  },
+  { label: 'scheduledtask.update::all::ruleset', value: ScheduledTasksType.UpdateAllRuleset },
+  { label: 'scheduledtask.update::all::plugin', value: ScheduledTasksType.UpdateAllPlugin },
 ]
 
 export const DefaultSubscribeScript = `const onSubscribe = async (proxies, subscription) => {\n  return { proxies, subscription }\n}`
 
 export const DefaultTestURL = 'https://www.gstatic.com/generate_204'
+
+export const DefaultTestTimeout = 5000
 
 export const DefaultConcurrencyLimit = 20
 

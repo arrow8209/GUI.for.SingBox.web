@@ -12,6 +12,8 @@ import {
   DefaultInboundTun,
   DefaultInboundShadowsocks,
   DefaultInboundCustom,
+  DefaultInboundVless,
+  DefaultInboundTrojan,
 } from '@/constant/profile'
 import { Inbound } from '@/enums/kernel'
 import { getKernelFileName, message, picker, sampleID } from '@/utils'
@@ -123,6 +125,30 @@ const inbounds = [
       }
       model.value.push(inbound)
       refreshShadowsocksPassword(inbound)
+    },
+  },
+  {
+    label: 'VLESS Reality',
+    value: () => {
+      model.value.push({
+        id: sampleID(),
+        tag: 'vless-reality-in',
+        type: Inbound.VLESS,
+        enable: true,
+        vless: DefaultInboundVless(),
+      })
+    },
+  },
+  {
+    label: 'Trojan TLS',
+    value: () => {
+      model.value.push({
+        id: sampleID(),
+        tag: 'trojan-tls-in',
+        type: Inbound.Trojan,
+        enable: true,
+        trojan: DefaultInboundTrojan(),
+      })
     },
   },
   {
@@ -306,13 +332,13 @@ defineExpose({ handleAdd })
         <div class="flex gap-4">
           <Button
             v-if="canExportInbound(inbound)"
-            @click="handleExport(inbound)"
+            v-tips="'kernel.inbounds.export'"
             icon="link"
             type="text"
             size="small"
-            v-tips="'kernel.inbounds.export'"
+            @click="handleExport(inbound)"
           />
-          <Button @click="handleDelete(index)" icon="delete" type="text" size="small" />
+          <Button icon="delete" type="text" size="small" @click="handleDelete(index)" />
         </div>
       </template>
       <div class="form-item">
@@ -395,13 +421,13 @@ defineExpose({ handleAdd })
             <div class="form-value flex items-center gap-4 flex-wrap justify-end">
               <Input v-model="inbound.shadowsocks.password" type="text" class="ss-password-input" />
               <Button
+                v-tips="t('common.refresh')"
                 icon="refresh"
                 type="text"
                 size="small"
                 :loading="shadowsocksGenerating[inbound.id]"
                 :disabled="shadowsocksGenerating[inbound.id]"
                 @click="() => refreshShadowsocksPassword(inbound)"
-                v-tips="t('common.refresh')"
               />
             </div>
           </div>

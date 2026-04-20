@@ -2,16 +2,17 @@
 import { ref, watch, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import logo from '@/assets/logo'
 import { ControllerCloseMode } from '@/enums/app'
 import { useAppSettingsStore, useProfilesStore, useKernelApiStore } from '@/stores'
 import { APP_TITLE, debounce, message } from '@/utils'
 
 import { useModal } from '@/components/Modal'
 
-import GroupsController from './components/GroupsController.vue'
-import KernelLogs from './components/KernelLogs.vue'
 import OverView from './components/OverView.vue'
 import QuickStart from './components/QuickStart.vue'
+import KernelLogs from './components/KernelLogs.vue'
+import GroupsController from './components/GroupsController.vue'
 
 const showController = ref(false)
 const controllerRef = useTemplateRef('controllerRef')
@@ -83,16 +84,16 @@ watch(showController, (v) => {
 </script>
 
 <template>
-  <div @wheel.passive="onMouseWheel" class="relative overflow-hidden h-full">
+  <div class="relative overflow-hidden h-full" @wheel.passive="onMouseWheel">
     <div
       v-if="(!kernelApiStore.running && !kernelApiStore.stopping) || kernelApiStore.starting"
       class="w-full h-[90%] flex flex-col items-center justify-center"
     >
-      <img src="@/assets/logo.png" draggable="false" class="w-128 mb-16" />
+      <img :src="logo" draggable="false" class="w-128 mb-16" />
 
       <template v-if="profilesStore.profiles.length === 0">
         <p>{{ t('home.noProfile', [APP_TITLE]) }}</p>
-        <Button @click="handleShowQuickStart" type="primary">{{ t('home.quickStart') }}</Button>
+        <Button type="primary" @click="handleShowQuickStart">{{ t('home.quickStart') }}</Button>
       </template>
 
       <template v-else>
@@ -140,10 +141,10 @@ watch(showController, (v) => {
             </div>
           </Card>
         </div>
-        <Button @click="handleStartKernel" :loading="kernelApiStore.starting" type="primary">
+        <Button :loading="kernelApiStore.starting" type="primary" @click="handleStartKernel">
           {{ t('home.overview.start') }}
         </Button>
-        <Button @click="handleShowKernelLogs" type="link" size="small" class="mt-4">
+        <Button type="link" size="small" class="mt-4" @click="handleShowKernelLogs">
           {{ t('home.overview.viewlog') }}
         </Button>
       </template>
@@ -153,7 +154,7 @@ watch(showController, (v) => {
       <div :class="{ 'blur-3xl': showController }">
         <OverView />
         <Divider>
-          <Button @click="showController = true" type="link" size="small">
+          <Button type="link" size="small" @click="showController = true">
             {{ t('home.controller.name') }}
           </Button>
         </Divider>
@@ -171,10 +172,10 @@ watch(showController, (v) => {
         v-show="showController"
         class="fixed left-1/2 -translate-x-1/2 bottom-12 z-2"
         style="background-color: var(--card-bg)"
-        @click="showController = false"
         type="text"
         size="small"
         icon="close"
+        @click="showController = false"
       />
     </template>
   </div>
